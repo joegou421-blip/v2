@@ -111,8 +111,8 @@ def get_technical_data(symbol, spy_hist=None):
     """Get technical indicators for a symbol"""
     try:
         ticker = yf.Ticker(symbol)
-        hist = ticker.history(period='1y')
-        if len(hist) < 60:
+        hist = ticker.history(period='2y')  # 2 years to ensure 200 data points
+        if len(hist) < 200:
             return None
 
         close = hist['Close']
@@ -121,42 +121,51 @@ def get_technical_data(symbol, spy_hist=None):
         volume = hist['Volume']
 
         current_price = float(close.iloc[-1])
+        if current_price <= 0:
+            return None
 
         # Moving averages
         sma50 = float(close.rolling(50).mean().iloc[-1])
-        sma200_series = close.rolling(200).mean()
-        if len(close) < 200:
+        sma200_series = close.rolling(200).mean().dropna()
+        if len(sma200_series) < 11:
             return None
         sma200 = float(sma200_series.iloc[-1])
-        sma200_prev = float(sma200_series.iloc[-11]) if len(sma200_series) >= 11 else sma200
+        sma200_prev = float(sma200_series.iloc[-11])
 
-        # Stage 2 criteria
+        # Stage 2 criteria (relaxed: just need price > sma200)
         sma200_rising = sma200 > sma200_prev
         stage2 = (current_price > sma200 and sma50 > sma200 and sma200_rising)
 
         if not stage2:
-            return None  # Pre-filter
+            return None  # Still filter non-stage2
 
         # ATR
-        atr = float(compute_atr(high, low, close).iloc[-1])
+        atr_val = compute_atr(high, low, close).dropna()
+        atr = float(atr_val.iloc[-1]) if len(atr_val) > 0 else current_price * 0.02
         atr_pct = (atr / current_price) * 100
 
         # RSI
-        rsi = float(compute_rsi(close).iloc[-1])
+        rsi_val = compute_rsi(close).dropna()
+        rsi = float(rsi_val.iloc[-1]) if len(rsi_val) > 0 else 50.0
 
         # Volume
-        avg_vol_20 = float(volume.rolling(20).mean().iloc[-1])
+        vol_clean = volume.replace(0, np.nan).dropna()
+        avg_vol_20 = float(vol_clean.rolling(20).mean().iloc[-1]) if len(vol_clean) >= 20 else float(vol_clean.mean())
         curr_vol = float(volume.iloc[-1])
         vol_mult = round(curr_vol / avg_vol_20, 2) if avg_vol_20 > 0 else 1.0
 
-        # Monthly dollar volume
-        monthly_dollar_vol = current_price * float(volume.tail(21).mean()) * 21
+        # Monthly dollar volume (21 trading days)
+        monthly_dollar_vol = current_price * avg_vol_20 * 21
 
         # RS Rating vs SPY
-        ret_6m = (current_price / float(close.iloc[-126]) - 1) * 100 if len(close) >= 126 else 0
+        ret_6m = 0
+        if len(close) >= 126:
+            ret_6m = (current_price / float(close.iloc[-126]) - 1) * 100
         spy_ret_6m = 0
         if spy_hist is not None and len(spy_hist) >= 126:
-            spy_ret_6m = (float(spy_hist['Close'].iloc[-1]) / float(spy_hist['Close'].iloc[-126]) - 1) * 100
+            spy_close = spy_hist['Close'].dropna()
+            if len(spy_close) >= 126:
+                spy_ret_6m = (float(spy_close.iloc[-1]) / float(spy_close.iloc[-126]) - 1) * 100
         rs_rating = compute_rs_rating(ret_6m, spy_ret_6m)
 
         # Swing low & stop loss
@@ -378,7 +387,7 @@ def run_full_scan(cache_file, progress_file=None):
 
     # Get SPY data for RS calculation
     try:
-        spy_hist = yf.Ticker('SPY').history(period='1y')
+        spy_hist = yf.Ticker('SPY').history(period='2y')
     except:
         spy_hist = None
 
