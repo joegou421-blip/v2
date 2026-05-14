@@ -1,0 +1,13 @@
+services:
+  - type: web
+    name: stock-scanner
+    env: python
+    buildCommand: pip install -r backend/requirements.txt
+    startCommand: cd backend && gunicorn app:app --workers 2 --timeout 300 --bind 0.0.0.0:$PORT
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.11.0
+    disk:
+      name: scan-cache
+      mountPath: /backend
+      sizeGB: 1
