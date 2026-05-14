@@ -386,6 +386,9 @@ def run_full_scan(cache_file, progress_file=None):
     tickers = SP500_TICKERS
     total = len(tickers)
 
+    # Debug counters
+    debug = {'no_data': 0, 'not_stage2': 0, 'low_mktcap': 0, 'low_beta': 0, 'low_vol': 0, 'passed': 0}
+
     # Batch download prices for efficiency
     scan_progress['current'] = '批量下載價格數據...'
 
@@ -401,6 +404,7 @@ def run_full_scan(cache_file, progress_file=None):
             # Technical analysis
             tech = get_technical_data(symbol, spy_hist)
             if not tech:
+                debug['not_stage2'] += 1
                 continue  # Stage 2 filter failed
 
             # Pre-filter by market cap and beta (quick check)
@@ -416,13 +420,18 @@ def run_full_scan(cache_file, progress_file=None):
             # Filters: only apply if we actually got data from FMP
             # market cap > 2B (skip if no data)
             if mkt_cap and mkt_cap > 0 and mkt_cap < 2_000_000_000:
+                debug['low_mktcap'] += 1
                 continue
             # beta > 1 (skip if no data)
             if beta_val and beta_val > 0 and beta_val <= 1.0:
+                debug['low_beta'] += 1
                 continue
             # monthly dollar volume > 500M (relaxed from 900M)
             if tech['monthly_dollar_vol'] > 0 and tech['monthly_dollar_vol'] < 500_000_000:
+                debug['low_vol'] += 1
                 continue
+
+            debug['passed'] += 1
 
             score, signal, signal_label, breakdown = score_stock(tech, fund)
 
@@ -467,7 +476,8 @@ def run_full_scan(cache_file, progress_file=None):
         'results': results,
         'scanned_at': datetime.now().isoformat(),
         'total_scanned': total,
-        'passed': len(results)
+        'passed': len(results),
+        'debug': debug
     }
 
     with open(cache_file, 'w') as f:
