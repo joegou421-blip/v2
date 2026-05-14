@@ -1,15 +1,30 @@
 from flask import Flask, jsonify, request, send_from_directory
 from flask_cors import CORS
-import json, os, time, threading
+import json, os, threading
 from market import get_market_overview
-from scanner import run_full_scan, get_cached_results, score_single_stock, scan_progress
+from scanner import run_full_scan, get_cached_results, score_single_stock
 
 app = Flask(__name__, static_folder='../frontend', static_url_path='')
 CORS(app)
 
 CACHE_FILE = 'scan_cache.json'
-scan_lock = threading.Lock()
-is_scanning = False
+PROGRESS_FILE = 'scan_progress.json'
+
+def write_progress(data):
+    try:
+        with open(PROGRESS_FILE, 'w') as f:
+            json.dump(data, f)
+    except:
+        pass
+
+def read_progress():
+    try:
+        if os.path.exists(PROGRESS_FILE):
+            with open(PROGRESS_FILE, 'r') as f:
+                return json.load(f)
+    except:
+        pass
+    return {'is_scanning': False, 'progress': 0, 'current': '', 'total': 500, 'done': 0}
 
 # ─── Serve Frontend ───────────────────────────────────────────────────────────
 @app.route('/')
@@ -32,18 +47,26 @@ def market():
 # ─── Scanner ──────────────────────────────────────────────────────────────────
 @app.route('/api/scan/start', methods=['POST'])
 def start_scan():
-    global is_scanning
-    with scan_lock:
-        if is_scanning:
-            return jsonify({'success': False, 'error': '掃描進行中'}), 409
-        is_scanning = True
+    prog = read_progress()
+    if prog.get('is_scanning'):
+        return jsonify({'success': False, 'error': '掃描進行中'}), 409
+
+    # Return cache if valid
+    cached = get_cached_results(CACHE_FILE)
+    if cached:
+        return jsonify({'success': True, 'cached': True, 'message': '使用緩存結果'})
+
+    write_progress({'is_scanning': True, 'progress': 0, 'current': '初始化...', 'total': 500, 'done': 0})
 
     def do_scan():
-        global is_scanning
         try:
-            run_full_scan(CACHE_FILE)
+            run_full_scan(CACHE_FILE, PROGRESS_FILE)
+        except Exception as e:
+            write_progress({'is_scanning': False, 'progress': 0, 'current': f'錯誤: {str(e)}', 'total': 500, 'done': 0})
         finally:
-            is_scanning = False
+            p = read_progress()
+            p['is_scanning'] = False
+            write_progress(p)
 
     t = threading.Thread(target=do_scan, daemon=True)
     t.start()
@@ -51,13 +74,7 @@ def start_scan():
 
 @app.route('/api/scan/progress')
 def scan_progress_api():
-    return jsonify({
-        'is_scanning': is_scanning,
-        'progress': scan_progress.get('progress', 0),
-        'current': scan_progress.get('current', ''),
-        'total': scan_progress.get('total', 500),
-        'done': scan_progress.get('done', 0)
-    })
+    return jsonify(read_progress())
 
 @app.route('/api/scan/results')
 def scan_results():
@@ -65,6 +82,13 @@ def scan_results():
     if cached:
         return jsonify({'success': True, 'data': cached})
     return jsonify({'success': False, 'error': '尚無掃描結果，請先執行掃描'})
+
+@app.route('/api/scan/clear', methods=['POST'])
+def clear_cache():
+    for f in [CACHE_FILE, PROGRESS_FILE]:
+        if os.path.exists(f):
+            os.remove(f)
+    return jsonify({'success': True})
 
 # ─── Single Stock Search ──────────────────────────────────────────────────────
 @app.route('/api/stock/<ticker>')

@@ -362,9 +362,19 @@ def score_stock(tech, fund):
 
     return score, signal, signal_label, breakdown
 
-def run_full_scan(cache_file):
+def _write_progress(progress_file, data):
+    if not progress_file:
+        return
+    try:
+        with open(progress_file, 'w') as f:
+            json.dump(data, f)
+    except:
+        pass
+
+def run_full_scan(cache_file, progress_file=None):
     global scan_progress
-    scan_progress = {'progress': 0, 'current': '初始化...', 'total': len(SP500_TICKERS), 'done': 0}
+    scan_progress = {'is_scanning': True, 'progress': 0, 'current': '初始化...', 'total': len(SP500_TICKERS), 'done': 0}
+    _write_progress(progress_file, dict(scan_progress))
 
     # Get SPY data for RS calculation
     try:
@@ -383,6 +393,9 @@ def run_full_scan(cache_file):
         scan_progress['current'] = symbol
         scan_progress['done'] = i
         scan_progress['progress'] = int((i / total) * 100)
+        # Write to file every 10 stocks so progress API can read it
+        if i % 10 == 0:
+            _write_progress(progress_file, dict(scan_progress))
 
         try:
             # Technical analysis
