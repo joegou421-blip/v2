@@ -51,9 +51,9 @@ def start_scan():
     if prog.get('is_scanning'):
         return jsonify({'success': False, 'error': '掃描進行中'}), 409
 
-    # Return cache if valid
+    # Return cache if valid AND has results
     cached = get_cached_results(CACHE_FILE)
-    if cached:
+    if cached and cached.get('passed', 0) > 0:
         return jsonify({'success': True, 'cached': True, 'message': '使用緩存結果'})
 
     write_progress({'is_scanning': True, 'progress': 0, 'current': '初始化...', 'total': 500, 'done': 0})

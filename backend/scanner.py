@@ -413,12 +413,15 @@ def run_full_scan(cache_file, progress_file=None):
             mkt_cap = fund.get('market_cap', 0)
             beta_val = fund.get('beta', 1.0)
 
-            # Filters: market cap > 2B, beta > 1, monthly dollar vol > 900M
-            if mkt_cap and mkt_cap < 2_000_000_000:
+            # Filters: only apply if we actually got data from FMP
+            # market cap > 2B (skip if no data)
+            if mkt_cap and mkt_cap > 0 and mkt_cap < 2_000_000_000:
                 continue
-            if beta_val and beta_val <= 1.0:
+            # beta > 1 (skip if no data)
+            if beta_val and beta_val > 0 and beta_val <= 1.0:
                 continue
-            if tech['monthly_dollar_vol'] < 900_000_000:
+            # monthly dollar volume > 500M (relaxed from 900M)
+            if tech['monthly_dollar_vol'] > 0 and tech['monthly_dollar_vol'] < 500_000_000:
                 continue
 
             score, signal, signal_label, breakdown = score_stock(tech, fund)
