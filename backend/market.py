@@ -1,7 +1,25 @@
-import yfinance as yf
-import numpy as np
+import requests
 import pandas as pd
+import numpy as np
 from datetime import datetime
+
+FMP_API_KEY = 'hL75f5DvVpnbuzMiibTuz0QCEb7lBDEI'
+FMP_BASE = 'https://financialmodelingprep.com/api/v3'
+
+def fmp_get(endpoint, params=None):
+    if params is None:
+        params = {}
+    params['apikey'] = FMP_API_KEY
+    try:
+        r = requests.get(f'{FMP_BASE}{endpoint}', params=params, timeout=15)
+        if r.status_code == 200:
+            data = r.json()
+            if isinstance(data, dict) and 'Error Message' in data:
+                return None
+            return data
+    except:
+        pass
+    return None
 
 def compute_rsi(series, period=14):
     delta = series.diff()
@@ -20,86 +38,89 @@ def compute_atr(high, low, close, period=14):
     ], axis=1).max(axis=1)
     return tr.rolling(period).mean()
 
-def get_vix():
+def get_ticker_data(symbol):
     try:
-        vix = yf.Ticker('^VIX')
-        hist = vix.history(period='5d')
-        if len(hist) == 0:
+        data = fmp_get(f'/historical-price-full/{symbol}', {'timeseries': 300})
+        if not data or 'historical' not in data or len(data['historical']) < 60:
             return None
-        current = round(float(hist['Close'].iloc[-1]), 2)
-        prev = round(float(hist['Close'].iloc[-2]), 2) if len(hist) >= 2 else current
-        change = round(current - prev, 2)
-        change_pct = round((change / prev) * 100, 2) if prev != 0 else 0
-        level = 'extreme_fear' if current > 30 else 'fear' if current > 20 else 'neutral' if current > 15 else 'calm'
+
+        hist = list(reversed(data['historical']))
+        closes = pd.Series([float(d.get('close', 0)) for d in hist], dtype=float)
+        highs  = pd.Series([float(d.get('high',  d.get('close', 0))) for d in hist], dtype=float)
+        lows   = pd.Series([float(d.get('low',   d.get('close', 0))) for d in hist], dtype=float)
+        vols   = pd.Series([float(d.get('volume', 0)) for d in hist], dtype=float)
+
+        current = float(closes.iloc[-1])
+        prev    = float(closes.iloc[-2])
+        change  = current - prev
+        change_pct = (change / prev * 100) if prev != 0 else 0
+
+        sma50 = float(closes.rolling(50).mean().iloc[-1])
+        sma200 = None
+        stage = None
+
+        if len(closes) >= 200:
+            sma200_s = closes.rolling(200).mean().dropna()
+            if len(sma200_s) >= 11:
+                sma200 = float(sma200_s.iloc[-1])
+                sma200_prev = float(sma200_s.iloc[-11])
+                rising = sma200 > sma200_prev
+                if current > sma200 and sma50 > sma200 and rising:
+                    stage = 2
+                elif current < sma200 and sma50 < sma200 and not rising:
+                    stage = 4
+                elif current > sma200:
+                    stage = 1
+                else:
+                    stage = 3
+
+        atr_s = compute_atr(highs, lows, closes).dropna()
+        atr = float(atr_s.iloc[-1]) if len(atr_s) > 0 else current * 0.02
+        atr_pct = (atr / current * 100) if current > 0 else 0
+
+        rsi_s = compute_rsi(closes).dropna()
+        rsi = float(rsi_s.iloc[-1]) if len(rsi_s) > 0 else 50.0
+
+        vol_nz = vols[vols > 0]
+        avg_vol = float(vol_nz.tail(20).mean()) if len(vol_nz) >= 20 else float(vol_nz.mean()) if len(vol_nz) > 0 else 1
+        vol_mult = round(float(vols.iloc[-1]) / avg_vol, 2) if avg_vol > 0 else 1.0
+
         return {
-            'value': current,
-            'change': change,
-            'change_pct': change_pct,
-            'level': level
+            'symbol': symbol,
+            'price': round(current, 2),
+            'change': round(change, 2),
+            'change_pct': round(change_pct, 2),
+            'rsi': round(rsi, 1),
+            'atr_pct': round(atr_pct, 2),
+            'vol_mult': vol_mult,
+            'sma50': round(sma50, 2),
+            'sma200': round(sma200, 2) if sma200 else None,
+            'stage': stage,
         }
     except:
         return None
 
-def get_ticker_data(symbol):
-    ticker = yf.Ticker(symbol)
-    hist = ticker.history(period='6mo')
-    if len(hist) < 50:
-        return None
-
-    close = hist['Close']
-    high = hist['High']
-    low = hist['Low']
-    volume = hist['Volume']
-
-    current = float(close.iloc[-1])
-    prev = float(close.iloc[-2])
-    change = current - prev
-    change_pct = (change / prev) * 100
-
-    sma50 = float(close.rolling(50).mean().iloc[-1])
-    sma200 = float(close.rolling(200).mean().iloc[-1]) if len(close) >= 200 else None
-    rsi = float(compute_rsi(close).iloc[-1])
-    atr = float(compute_atr(high, low, close).iloc[-1])
-    atr_pct = (atr / current) * 100
-
-    # Volume multiplier (current vs 20d avg)
-    avg_vol_20 = float(volume.rolling(20).mean().iloc[-1])
-    curr_vol = float(volume.iloc[-1])
-    vol_mult = round(curr_vol / avg_vol_20, 2) if avg_vol_20 > 0 else 1.0
-
-    # % from 52w high
-    high_52w = float(high.rolling(252).max().iloc[-1]) if len(high) >= 252 else float(high.max())
-    pct_from_high = ((current - high_52w) / high_52w) * 100
-
-    # Stage detection (simplified for index)
-    stage = None
-    if sma200:
-        sma200_slope = float(close.rolling(200).mean().diff(10).iloc[-1])
-        if current > sma200 and sma50 > sma200 and sma200_slope > 0:
-            stage = 2
-        elif current < sma200 and sma50 < sma200 and sma200_slope < 0:
-            stage = 4
-        elif current > sma200:
-            stage = 1
-        else:
-            stage = 3
-
-    return {
-        'symbol': symbol,
-        'price': round(current, 2),
-        'change': round(change, 2),
-        'change_pct': round(change_pct, 2),
-        'rsi': round(rsi, 1),
-        'atr_pct': round(atr_pct, 2),
-        'vol_mult': vol_mult,
-        'sma50': round(sma50, 2),
-        'sma200': round(sma200, 2) if sma200 else None,
-        'pct_from_high': round(pct_from_high, 2),
-        'stage': stage,
-    }
+def get_vix():
+    try:
+        # FMP has VIX quote
+        data = fmp_get('/quote/%5EVIX')
+        if data and len(data) > 0:
+            d = data[0]
+            current = d.get('price', 0)
+            change = d.get('change', 0)
+            change_pct = d.get('changesPercentage', 0)
+            level = 'extreme_fear' if current > 30 else 'fear' if current > 20 else 'neutral' if current > 15 else 'calm'
+            return {
+                'value': round(current, 2),
+                'change': round(change, 2),
+                'change_pct': round(change_pct, 2),
+                'level': level
+            }
+    except:
+        pass
+    return None
 
 def determine_market_regime(spy_data, vix_data):
-    """Risk-On / Neutral / Risk-Off based on SPY stage + VIX"""
     if spy_data is None:
         return 'neutral'
     stage = spy_data.get('stage')

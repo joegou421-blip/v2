@@ -1,7 +1,6 @@
-import yfinance as yf
+import requests
 import numpy as np
 import pandas as pd
-import requests
 import json
 import time
 import os
@@ -13,55 +12,28 @@ FMP_BASE = 'https://financialmodelingprep.com/api/v3'
 scan_progress = {'progress': 0, 'current': '', 'total': 500, 'done': 0}
 
 SP500_TICKERS = [
-    'AAPL','MSFT','NVDA','AMZN','GOOGL','META','TSLA','BRK-B','JPM','XOM',
-    'UNH','JNJ','V','PG','MA','HD','CVX','MRK','ABBV','PEP',
-    'COST','AVGO','LLY','ADBE','CSCO','WMT','ACN','MCD','CRM','BAC',
-    'TMO','ABT','TXN','NEE','QCOM','DHR','PM','AMGN','UPS','RTX',
-    'HON','SBUX','IBM','INTC','INTU','SPGI','GS','MS','CAT','BLK',
-    'GE','AXP','MDLZ','ADI','GILD','ISRG','DE','ADP','MMC','SYK',
-    'CB','BKNG','CVS','REGN','ZTS','LRCX','ETN','NOC','TJX','MO',
-    'SO','DUK','EMR','VRTX','AON','HUM','CI','APD','PSA','NSC',
-    'ITW','F','GM','KMB','ECL','ROP','EW','D','SHW','MCO',
-    'ORLY','CME','MNST','PCAR','FDX','A','OXY','TEL','WM','KLAC',
-    'ROST','STZ','DXCM','CTAS','MRNA','SNPS','CDNS','AIG','HCA','BDX',
-    'FTNT','BIIB','DG','CTSH','WBA','MSI','TFC','PAYX','VLO','PH',
-    'GPN','OTIS','CARR','ALL','HLT','EA','EBAY','FAST','MTD','IDXX',
-    'KEYS','WST','PPG','EFX','MCHP','ON','HPQ','BAX','TROW','DLR',
-    'WEC','AWK','ES','XEL','IFF','LUV','AAL','DAL','UAL','ALK',
-    'KHC','CPB','GIS','K','SJM','CAG','MKC','CLX','CHD','EL',
-    'RL','TPR','PVH','HBI','NKE','VFC','GPS','M','JWN','KSS',
-    'MAR','H','IHG','RCL','CCL','NCLH','MGM','LVS','WYNN','CZR',
-    'DIS','CMCSA','NFLX','PARA','WBD','FOX','FOXA','OMC','IPG','NYT',
-    'T','VZ','TMUS','LUMN','FYBR','WBD','CHTR','DISH','SIRI','OMF',
-    'PFE','BMY','LLY','AMGN','GILD','BIIB','VRTX','REGN','ILMN','ALNY',
-    'DXCM','HOLX','BAX','BSX','EW','ISRG','MDT','SYK','ZBH','XRAY',
-    'C','WFC','BAC','USB','PNC','TFC','COF','AXP','DFS','SYF',
-    'JPM','GS','MS','BLK','SCHW','ICE','CME','NDAQ','CBOE','FDS',
-    'AMT','PLD','CCI','EQIX','PSA','AVB','EQR','WY','DLR','SBAC',
-    'O','WELL','VTR','SPG','MAC','KIM','REG','BXP','SLG','VNO',
-    'XOM','CVX','COP','EOG','PXD','DVN','MRO','APA','HAL','SLB',
-    'BKR','FTI','NOV','HP','RIG','VLO','PSX','MPC','HES','OXY',
-    'LIN','APD','EMN','CE','HUN','FMC','CF','MOS','NUE','STLD',
-    'X','CLF','AA','FCX','NEM','GOLD','AEM','WPM','FNV','PAAS',
-    'CAT','DE','CMI','PCAR','TEX','OSK','WNC','AGCO','CNH','TXT',
-    'GD','LMT','NOC','RTX','BA','HII','L3H','TDG','HEI','SPR',
-    'FDX','UPS','XPO','CHRW','EXPD','JBHT','KNX','WERN','ODFL','SAIA',
-    'AMZN','BABA','JD','PDD','MELI','SHOP','SE','GRAB','DIDI','LCID',
-    'PLTR','SNOW','DDOG','NET','ZS','CRWD','S','PANW','OKTA','VEEV',
-    'HUBS','TWLO','MDB','DOCN','GTLB','CFLT','BILL','APP','TTD','RBLX',
-    'U','ABNB','UBER','LYFT','DASH','ABNB','VRBO','EXPE','TRIP','BKNG',
-    'COIN','HOOD','SOFI','AFRM','UPST','LC','OPEN','OFFERPAD','OPENDOOR',
-    'ZM','DOCU','ESTC','SPLK','SUMO','NEWR','DDOG','FSLY','CLDR','BOX',
-    'NOW','WDAY','CRM','ADSK','ANSS','PTC','CTXS','VRNT','MANH','EPAM',
-    'AMAT','LRCX','KLAC','ASML','ENTG','MKSI','ONTO','ACLS','CAMT','PLAB',
-    'AMD','INTC','QCOM','AVGO','MRVL','SWKS','QRVO','MPWR','AAON','SLAB',
-    'NXPI','TI','STM','IFNNY','TSM','MU','WDC','STX','NTAP','PSTG',
-    'MSFT','ORCL','SAP','IBM','INFY','WIT','CTSH','ACN','EPAM','GLOB',
-    'GOOGL','META','SNAP','PINS','TWTR','MTCH','BMBL','YELP','ANGI','ZG',
-    'AMZN','MSFT','GOOGL','ORCL','CRM','WDAY','NOW','VEEV','HUBS','ADSK'
+    'AAPL','MSFT','NVDA','AMZN','GOOGL','META','TSLA','JPM','XOM','UNH',
+    'JNJ','V','PG','MA','HD','CVX','MRK','ABBV','PEP','COST',
+    'AVGO','LLY','ADBE','CSCO','WMT','ACN','MCD','CRM','BAC','TMO',
+    'ABT','TXN','NEE','QCOM','DHR','PM','AMGN','UPS','RTX','HON',
+    'SBUX','IBM','INTC','INTU','SPGI','GS','MS','CAT','BLK','GE',
+    'AXP','MDLZ','ADI','GILD','ISRG','DE','ADP','MMC','SYK','CB',
+    'BKNG','CVS','REGN','ZTS','LRCX','ETN','NOC','TJX','MO','SO',
+    'DUK','EMR','VRTX','AON','HUM','CI','APD','PSA','NSC','ITW',
+    'F','GM','ECL','ROP','EW','SHW','MCO','ORLY','CME','MNST',
+    'PCAR','FDX','KLAC','ROST','STZ','DXCM','CTAS','MRNA','SNPS','CDNS',
+    'BDX','FTNT','BIIB','DG','CTSH','MSI','TFC','PAYX','VLO','PH',
+    'OTIS','CARR','ALL','HLT','EA','FAST','MTD','IDXX','KEYS','WST',
+    'PPG','EFX','MCHP','ON','HPQ','TROW','DLR','WEC','AWK','IFF',
+    'NKE','DIS','CMCSA','NFLX','PLTR','SNOW','DDOG','NET','ZS','CRWD',
+    'PANW','OKTA','VEEV','HUBS','MDB','TTD','RBLX','ABNB','UBER','DASH',
+    'COIN','NOW','WDAY','ADSK','ANSS','AMAT','AMD','MU','ORCL',
+    'NXPI','SWKS','MPWR','LIN','NUE','FCX','NEM','GD','LMT','BA',
+    'ODFL','SAIA','MELI','SE','PYPL','APP','ZM','DOCU','EPAM','MANH',
+    'JPM','WFC','USB','PNC','COF','AMT','PLD','CCI','EQIX','PSA',
+    'COP','EOG','DVN','HAL','SLB','PSX','UNH','HCA','CNC','PFE',
+    'BMY','BIIB','REGN','ALNY','WMT','TGT','EBAY','CMG','YUM','QSR',
 ]
-
-# Deduplicate
 SP500_TICKERS = list(dict.fromkeys(SP500_TICKERS))
 
 def fmp_get(endpoint, params=None):
@@ -69,9 +41,12 @@ def fmp_get(endpoint, params=None):
         params = {}
     params['apikey'] = FMP_API_KEY
     try:
-        r = requests.get(f'{FMP_BASE}{endpoint}', params=params, timeout=10)
+        r = requests.get(f'{FMP_BASE}{endpoint}', params=params, timeout=15)
         if r.status_code == 200:
-            return r.json()
+            data = r.json()
+            if isinstance(data, dict) and 'Error Message' in data:
+                return None
+            return data
     except:
         pass
     return None
@@ -93,91 +68,82 @@ def compute_atr(high, low, close, period=14):
     ], axis=1).max(axis=1)
     return tr.rolling(period).mean()
 
-def get_swing_low(low_series, lookback=20):
-    """Get recent swing low"""
-    recent = low_series.iloc[-lookback:]
-    return float(recent.min())
-
-def compute_rs_rating(stock_returns, spy_returns):
-    """RS Rating 0-100 vs SPY"""
-    if spy_returns == 0 or spy_returns is None:
-        return 50
-    ratio = stock_returns / abs(spy_returns) if spy_returns != 0 else 1
-    # Normalize to 0-100
-    rating = min(100, max(0, 50 + ratio * 25))
-    return round(rating, 1)
-
-def get_technical_data(symbol, spy_hist=None):
-    """Get technical indicators for a symbol"""
+def _write_progress(progress_file, data):
+    if not progress_file:
+        return
     try:
-        ticker = yf.Ticker(symbol)
-        hist = ticker.history(period='2y')  # 2 years to ensure 200 data points
-        if len(hist) < 200:
+        with open(progress_file, 'w') as f:
+            json.dump(data, f)
+    except:
+        pass
+
+def get_spy_data():
+    try:
+        data = fmp_get('/historical-price-full/SPY', {'serietype': 'line', 'timeseries': 200})
+        if data and 'historical' in data:
+            hist = list(reversed(data['historical']))
+            closes = [d['close'] for d in hist]
+            if len(closes) >= 126:
+                ret_6m = (closes[-1] / closes[-126] - 1) * 100
+                return {'ret_6m': ret_6m}
+    except:
+        pass
+    return {'ret_6m': 0}
+
+def get_technical_data_fmp(symbol, spy_data=None):
+    try:
+        # Get OHLCV history
+        data = fmp_get(f'/historical-price-full/{symbol}', {'timeseries': 500})
+        if not data or 'historical' not in data:
+            return None
+        hist = list(reversed(data['historical']))
+        if len(hist) < 210:
             return None
 
-        close = hist['Close']
-        high = hist['High']
-        low = hist['Low']
-        volume = hist['Volume']
+        closes = pd.Series([float(d.get('close', 0)) for d in hist], dtype=float)
+        highs  = pd.Series([float(d.get('high',  d.get('close', 0))) for d in hist], dtype=float)
+        lows   = pd.Series([float(d.get('low',   d.get('close', 0))) for d in hist], dtype=float)
+        vols   = pd.Series([float(d.get('volume', 0)) for d in hist], dtype=float)
 
-        current_price = float(close.iloc[-1])
+        current_price = float(closes.iloc[-1])
         if current_price <= 0:
             return None
 
-        # Moving averages
-        sma50 = float(close.rolling(50).mean().iloc[-1])
-        sma200_series = close.rolling(200).mean().dropna()
-        if len(sma200_series) < 11:
+        sma50 = float(closes.rolling(50).mean().iloc[-1])
+        sma200_s = closes.rolling(200).mean().dropna()
+        if len(sma200_s) < 15:
             return None
-        sma200 = float(sma200_series.iloc[-1])
-        sma200_prev = float(sma200_series.iloc[-11])
+        sma200 = float(sma200_s.iloc[-1])
+        sma200_prev = float(sma200_s.iloc[-11])
 
-        # Stage 2 criteria (relaxed: just need price > sma200)
         sma200_rising = sma200 > sma200_prev
-        stage2 = (current_price > sma200 and sma50 > sma200 and sma200_rising)
-
+        stage2 = current_price > sma200 and sma50 > sma200 and sma200_rising
         if not stage2:
-            return None  # Still filter non-stage2
+            return None
 
-        # ATR
-        atr_val = compute_atr(high, low, close).dropna()
-        atr = float(atr_val.iloc[-1]) if len(atr_val) > 0 else current_price * 0.02
+        atr_s = compute_atr(highs, lows, closes).dropna()
+        atr = float(atr_s.iloc[-1]) if len(atr_s) > 0 else current_price * 0.02
         atr_pct = (atr / current_price) * 100
 
-        # RSI
-        rsi_val = compute_rsi(close).dropna()
-        rsi = float(rsi_val.iloc[-1]) if len(rsi_val) > 0 else 50.0
+        rsi_s = compute_rsi(closes).dropna()
+        rsi = float(rsi_s.iloc[-1]) if len(rsi_s) > 0 else 50.0
 
-        # Volume
-        vol_clean = volume.replace(0, np.nan).dropna()
-        avg_vol_20 = float(vol_clean.rolling(20).mean().iloc[-1]) if len(vol_clean) >= 20 else float(vol_clean.mean())
-        curr_vol = float(volume.iloc[-1])
-        vol_mult = round(curr_vol / avg_vol_20, 2) if avg_vol_20 > 0 else 1.0
+        vol_nz = vols[vols > 0]
+        avg_vol = float(vol_nz.tail(20).mean()) if len(vol_nz) >= 20 else float(vol_nz.mean()) if len(vol_nz) > 0 else 1
+        vol_mult = round(float(vols.iloc[-1]) / avg_vol, 2) if avg_vol > 0 else 1.0
+        monthly_dollar_vol = current_price * avg_vol * 21
 
-        # Monthly dollar volume (21 trading days)
-        monthly_dollar_vol = current_price * avg_vol_20 * 21
+        ret_6m = (current_price / float(closes.iloc[-126]) - 1) * 100 if len(closes) >= 126 else 0
+        spy_ret = spy_data.get('ret_6m', 0) if spy_data else 0
+        ratio = ret_6m / abs(spy_ret) if spy_ret != 0 else 1
+        rs_rating = round(min(100, max(0, 50 + ratio * 25)), 1)
 
-        # RS Rating vs SPY
-        ret_6m = 0
-        if len(close) >= 126:
-            ret_6m = (current_price / float(close.iloc[-126]) - 1) * 100
-        spy_ret_6m = 0
-        if spy_hist is not None and len(spy_hist) >= 126:
-            spy_close = spy_hist['Close'].dropna()
-            if len(spy_close) >= 126:
-                spy_ret_6m = (float(spy_close.iloc[-1]) / float(spy_close.iloc[-126]) - 1) * 100
-        rs_rating = compute_rs_rating(ret_6m, spy_ret_6m)
-
-        # Swing low & stop loss
-        swing_low = get_swing_low(low, lookback=20)
+        swing_low = float(lows.tail(20).min())
         stop_loss = round(swing_low * 0.99, 2)
-        risk = current_price - stop_loss
+        risk = max(current_price - stop_loss, current_price * 0.02)
         target = round(current_price + risk * 2.5, 2)
-        rr = round((target - current_price) / risk, 2) if risk > 0 else 0
-
-        # ATR chase filter
-        atr_distance = risk / atr if atr > 0 else 0
-        chase_risk = atr_distance > 1.5
+        rr = round((target - current_price) / risk, 2)
+        chase_risk = (risk / atr) > 1.5 if atr > 0 else False
 
         return {
             'price': round(current_price, 2),
@@ -195,253 +161,137 @@ def get_technical_data(symbol, spy_hist=None):
             'rr': rr,
             'chase_risk': chase_risk,
         }
-    except Exception as e:
+    except:
         return None
 
 def get_fundamental_data(symbol):
-    """Get fundamental data from FMP - earnings, revenue, margins"""
     try:
-        # Income statement (quarterly)
         income = fmp_get(f'/income-statement/{symbol}', {'period': 'quarter', 'limit': 8})
-        if not income or len(income) < 4:
-            return {}
-
-        # Analyst estimates
         estimates = fmp_get(f'/analyst-estimates/{symbol}', {'period': 'quarter', 'limit': 4})
-
-        # Company profile (market cap, beta)
         profile = fmp_get(f'/profile/{symbol}')
-
         result = {}
 
-        # Market cap & beta from profile
         if profile and len(profile) > 0:
             p = profile[0]
-            result['market_cap'] = p.get('mktCap', 0)
-            result['beta'] = p.get('beta', 1.0)
-            result['company_name'] = p.get('companyName', symbol)
-            result['sector'] = p.get('sector', '')
-            result['industry'] = p.get('industry', '')
+            result.update({
+                'market_cap': p.get('mktCap', 0),
+                'beta': p.get('beta', 1.5),
+                'company_name': p.get('companyName', symbol),
+                'sector': p.get('sector', ''),
+                'industry': p.get('industry', ''),
+            })
 
-        # EPS & Revenue analysis
-        eps_list = []
-        rev_list = []
-        gm_list = []
+        if not income or len(income) < 2:
+            result.update({'eps_yoy':0,'rev_yoy':0,'eps_accel_2q':False,'eps_accel_3q':False,
+                           'gm_expanding':False,'turned_profitable':False,'eps_beat':False,'rev_beat':False})
+            return result
 
+        eps_list, rev_list, gm_list = [], [], []
         for q in income[:6]:
             eps = q.get('eps', 0) or 0
             rev = q.get('revenue', 0) or 0
-            gross_profit = q.get('grossProfit', 0) or 0
-            gm = (gross_profit / rev * 100) if rev > 0 else 0
+            gp  = q.get('grossProfit', 0) or 0
             eps_list.append(eps)
             rev_list.append(rev)
-            gm_list.append(gm)
+            gm_list.append((gp / rev * 100) if rev > 0 else 0)
 
-        # EPS YoY growth (most recent Q vs same Q last year)
-        eps_yoy = 0
-        if len(eps_list) >= 5 and eps_list[4] != 0:
-            eps_yoy = ((eps_list[0] - eps_list[4]) / abs(eps_list[4])) * 100
+        eps_yoy = ((eps_list[0]-eps_list[4])/abs(eps_list[4])*100) if len(eps_list)>=5 and eps_list[4]!=0 else 0
+        rev_yoy = ((rev_list[0]-rev_list[4])/rev_list[4]*100) if len(rev_list)>=5 and rev_list[4]>0 else 0
 
-        # EPS acceleration
-        eps_growth_rates = []
-        for i in range(min(4, len(eps_list) - 1)):
-            if eps_list[i + 1] != 0:
-                g = ((eps_list[i] - eps_list[i + 1]) / abs(eps_list[i + 1])) * 100
-                eps_growth_rates.append(g)
+        gr = []
+        for i in range(min(4, len(eps_list)-1)):
+            if eps_list[i+1] != 0:
+                gr.append((eps_list[i]-eps_list[i+1])/abs(eps_list[i+1])*100)
 
-        eps_accel_2q = len(eps_growth_rates) >= 2 and eps_growth_rates[0] > eps_growth_rates[1]
-        eps_accel_3q = len(eps_growth_rates) >= 3 and eps_growth_rates[0] > eps_growth_rates[1] > eps_growth_rates[2]
-
-        # Revenue growth YoY
-        rev_yoy = 0
-        if len(rev_list) >= 5 and rev_list[4] > 0:
-            rev_yoy = ((rev_list[0] - rev_list[4]) / rev_list[4]) * 100
-
-        # Gross margin expansion
-        gm_expanding = len(gm_list) >= 2 and gm_list[0] > gm_list[1]
-
-        # Turnaround (loss to profit)
-        turned_profitable = len(eps_list) >= 2 and eps_list[0] > 0 and eps_list[1] <= 0
-
-        # EPS & Revenue beat
-        eps_beat = False
-        rev_beat = False
-        if estimates and len(estimates) > 0:
+        eps_beat = rev_beat = False
+        if estimates and len(estimates) > 0 and income:
             est = estimates[0]
-            actual_eps = income[0].get('eps', 0) or 0 if income else 0
-            actual_rev = income[0].get('revenue', 0) or 0 if income else 0
-            est_eps = est.get('estimatedEpsAvg', 0) or 0
-            est_rev = est.get('estimatedRevenueAvg', 0) or 0
-            eps_beat = actual_eps > est_eps if est_eps != 0 else False
-            rev_beat = actual_rev > est_rev if est_rev != 0 else False
+            eps_beat = (income[0].get('eps',0) or 0) > (est.get('estimatedEpsAvg',0) or 0) if est.get('estimatedEpsAvg',0) else False
+            rev_beat = (income[0].get('revenue',0) or 0) > (est.get('estimatedRevenueAvg',0) or 0) if est.get('estimatedRevenueAvg',0) else False
 
         result.update({
             'eps_yoy': round(eps_yoy, 1),
             'rev_yoy': round(rev_yoy, 1),
-            'eps_accel_2q': eps_accel_2q,
-            'eps_accel_3q': eps_accel_3q,
-            'gm_expanding': gm_expanding,
-            'turned_profitable': turned_profitable,
+            'eps_accel_2q': len(gr)>=2 and gr[0]>gr[1],
+            'eps_accel_3q': len(gr)>=3 and gr[0]>gr[1]>gr[2],
+            'gm_expanding': len(gm_list)>=2 and gm_list[0]>gm_list[1],
+            'turned_profitable': len(eps_list)>=2 and eps_list[0]>0 and eps_list[1]<=0,
             'eps_beat': eps_beat,
             'rev_beat': rev_beat,
         })
-
         return result
-    except Exception as e:
+    except:
         return {}
 
 def score_stock(tech, fund):
-    """Calculate 0-15 score"""
     score = 0
     breakdown = {}
+    checks = [
+        ('eps_yoy',           fund.get('eps_yoy',0)>20,              2, 'EPS年增長 > 20%',      fund.get('eps_yoy',0)),
+        ('eps_accel_2q',      fund.get('eps_accel_2q',False),         2, 'EPS連續2季加速',        None),
+        ('eps_accel_3q',      fund.get('eps_accel_3q',False),         1, 'EPS連續3季加速',        None),
+        ('rev_growth',        fund.get('rev_yoy',0)>15,               1, '收入增長 > 15%',         fund.get('rev_yoy',0)),
+        ('eps_beat',          fund.get('eps_beat',False),              2, 'EPS超越分析師預期',      None),
+        ('rev_beat',          fund.get('rev_beat',False),              1, '收入超越分析師預期',     None),
+        ('gm_expanding',      fund.get('gm_expanding',False),          1, '毛利率擴張',             None),
+        ('turned_profitable', fund.get('turned_profitable',False),     1, '由虧轉盈',               None),
+        ('rs_rating',         tech.get('rs_rating',0)>70,              2, 'RS評級 > 70',            tech.get('rs_rating',0)),
+        ('stage2',            tech.get('stage2',False),                2, 'Stage 2 確認',           None),
+    ]
+    for key, passed, pts, label, value in checks:
+        if passed:
+            score += pts
+        entry = {'pass': passed, 'points': pts, 'label': label}
+        if value is not None:
+            entry['value'] = value
+        breakdown[key] = entry
 
-    # 1. EPS YoY > 20%
-    eps_yoy_pass = fund.get('eps_yoy', 0) > 20
-    breakdown['eps_yoy'] = {'pass': eps_yoy_pass, 'points': 2, 'value': fund.get('eps_yoy', 0), 'label': 'EPS年增長 > 20%'}
-    if eps_yoy_pass:
-        score += 2
-
-    # 2. EPS accel 2Q
-    eps_accel_2q = fund.get('eps_accel_2q', False)
-    breakdown['eps_accel_2q'] = {'pass': eps_accel_2q, 'points': 2, 'label': 'EPS連續2季加速'}
-    if eps_accel_2q:
-        score += 2
-
-    # 3. EPS accel 3Q
-    eps_accel_3q = fund.get('eps_accel_3q', False)
-    breakdown['eps_accel_3q'] = {'pass': eps_accel_3q, 'points': 1, 'label': 'EPS連續3季加速'}
-    if eps_accel_3q:
-        score += 1
-
-    # 4. Revenue growth > 15%
-    rev_pass = fund.get('rev_yoy', 0) > 15
-    breakdown['rev_growth'] = {'pass': rev_pass, 'points': 1, 'value': fund.get('rev_yoy', 0), 'label': '收入增長 > 15%'}
-    if rev_pass:
-        score += 1
-
-    # 5. EPS beat
-    eps_beat = fund.get('eps_beat', False)
-    breakdown['eps_beat'] = {'pass': eps_beat, 'points': 2, 'label': 'EPS超越分析師預期'}
-    if eps_beat:
-        score += 2
-
-    # 6. Revenue beat
-    rev_beat = fund.get('rev_beat', False)
-    breakdown['rev_beat'] = {'pass': rev_beat, 'points': 1, 'label': '收入超越分析師預期'}
-    if rev_beat:
-        score += 1
-
-    # 7. Gross margin expanding
-    gm_expanding = fund.get('gm_expanding', False)
-    breakdown['gm_expanding'] = {'pass': gm_expanding, 'points': 1, 'label': '毛利率擴張'}
-    if gm_expanding:
-        score += 1
-
-    # 8. Turned profitable
-    turned = fund.get('turned_profitable', False)
-    breakdown['turned_profitable'] = {'pass': turned, 'points': 1, 'label': '由虧轉盈'}
-    if turned:
-        score += 1
-
-    # 9. RS Rating > 70
-    rs_pass = tech.get('rs_rating', 0) > 70
-    breakdown['rs_rating'] = {'pass': rs_pass, 'points': 2, 'value': tech.get('rs_rating', 0), 'label': 'RS評級 > 70'}
-    if rs_pass:
-        score += 2
-
-    # 10. Stage 2 confirmed
-    stage2 = tech.get('stage2', False)
-    breakdown['stage2'] = {'pass': stage2, 'points': 2, 'label': 'Stage 2 確認'}
-    if stage2:
-        score += 2
-
-    # Signal level
-    if score >= 12:
-        signal = 'strong_buy'
-        signal_label = '強烈買入'
-    elif score >= 9:
-        signal = 'buy'
-        signal_label = '買入'
-    elif score >= 6:
-        signal = 'neutral_positive'
-        signal_label = '中性偏好'
-    else:
-        signal = 'watch'
-        signal_label = '觀望'
-
-    return score, signal, signal_label, breakdown
-
-def _write_progress(progress_file, data):
-    if not progress_file:
-        return
-    try:
-        with open(progress_file, 'w') as f:
-            json.dump(data, f)
-    except:
-        pass
+    if score >= 12:   signal, sl = 'strong_buy',       '強烈買入'
+    elif score >= 9:  signal, sl = 'buy',               '買入'
+    elif score >= 6:  signal, sl = 'neutral_positive',  '中性偏好'
+    else:             signal, sl = 'watch',              '觀望'
+    return score, signal, sl, breakdown
 
 def run_full_scan(cache_file, progress_file=None):
     global scan_progress
-    scan_progress = {'is_scanning': True, 'progress': 0, 'current': '初始化...', 'total': len(SP500_TICKERS), 'done': 0}
-    _write_progress(progress_file, dict(scan_progress))
-
-    # Get SPY data for RS calculation
-    try:
-        spy_hist = yf.Ticker('SPY').history(period='2y')
-    except:
-        spy_hist = None
-
-    results = []
     tickers = SP500_TICKERS
     total = len(tickers)
+    scan_progress = {'is_scanning': True, 'progress': 0, 'current': '初始化...', 'total': total, 'done': 0}
+    _write_progress(progress_file, dict(scan_progress))
 
-    # Debug counters
-    debug = {'no_data': 0, 'not_stage2': 0, 'low_mktcap': 0, 'low_beta': 0, 'low_vol': 0, 'passed': 0}
+    scan_progress['current'] = '取得 SPY 基準數據...'
+    _write_progress(progress_file, dict(scan_progress))
+    spy_data = get_spy_data()
 
-    # Batch download prices for efficiency
-    scan_progress['current'] = '批量下載價格數據...'
+    results = []
+    debug = {'not_stage2': 0, 'low_mktcap': 0, 'low_beta': 0, 'low_vol': 0, 'passed': 0}
 
     for i, symbol in enumerate(tickers):
-        scan_progress['current'] = symbol
-        scan_progress['done'] = i
-        scan_progress['progress'] = int((i / total) * 100)
-        # Write to file every 10 stocks so progress API can read it
-        if i % 10 == 0:
+        scan_progress.update({'current': symbol, 'done': i, 'progress': int(i/total*100)})
+        if i % 5 == 0:
             _write_progress(progress_file, dict(scan_progress))
 
         try:
-            # Technical analysis
-            tech = get_technical_data(symbol, spy_hist)
+            tech = get_technical_data_fmp(symbol, spy_data)
             if not tech:
                 debug['not_stage2'] += 1
-                continue  # Stage 2 filter failed
+                continue
 
-            # Pre-filter by market cap and beta (quick check)
-            mkt_cap = None
-            beta = None
-
-            # Get fundamental data for top candidates
             fund = get_fundamental_data(symbol)
-
             mkt_cap = fund.get('market_cap', 0)
-            beta_val = fund.get('beta', 1.0)
+            beta_val = fund.get('beta', 1.5)
 
-            # Filters: only apply if we actually got data from FMP
-            # market cap > 2B (skip if no data)
             if mkt_cap and mkt_cap > 0 and mkt_cap < 2_000_000_000:
                 debug['low_mktcap'] += 1
                 continue
-            # beta > 1 (skip if no data)
-            if beta_val and beta_val > 0 and beta_val <= 1.0:
+            if beta_val and 0 < beta_val <= 0.8:
                 debug['low_beta'] += 1
                 continue
-            # monthly dollar volume > 500M (relaxed from 900M)
-            if tech['monthly_dollar_vol'] > 0 and tech['monthly_dollar_vol'] < 500_000_000:
+            if tech['monthly_dollar_vol'] > 0 and tech['monthly_dollar_vol'] < 100_000_000:
                 debug['low_vol'] += 1
                 continue
 
             debug['passed'] += 1
-
             score, signal, signal_label, breakdown = score_stock(tech, fund)
 
             results.append({
@@ -449,15 +299,13 @@ def run_full_scan(cache_file, progress_file=None):
                 'company_name': fund.get('company_name', symbol),
                 'sector': fund.get('sector', ''),
                 'industry': fund.get('industry', ''),
-                'score': score,
-                'signal': signal,
-                'signal_label': signal_label,
+                'score': score, 'signal': signal, 'signal_label': signal_label,
                 'breakdown': breakdown,
                 'price': tech['price'],
                 'eps_yoy': fund.get('eps_yoy', 0),
                 'rev_yoy': fund.get('rev_yoy', 0),
                 'rs_rating': tech['rs_rating'],
-                'beta': fund.get('beta', tech.get('beta', 1)),
+                'beta': beta_val,
                 'market_cap': mkt_cap,
                 'stop_loss': tech['stop_loss'],
                 'target': tech['target'],
@@ -467,35 +315,20 @@ def run_full_scan(cache_file, progress_file=None):
                 'rsi': tech['rsi'],
                 'vol_mult': tech['vol_mult'],
             })
-
-            time.sleep(0.05)  # Rate limiting
-
-        except Exception as e:
+            time.sleep(0.1)
+        except:
             continue
 
-    # Sort by score
     results.sort(key=lambda x: x['score'], reverse=True)
-
-    # Add rankings
     for i, r in enumerate(results):
         r['rank'] = i + 1
 
-    # Cache results
-    cache_data = {
-        'results': results,
-        'scanned_at': datetime.now().isoformat(),
-        'total_scanned': total,
-        'passed': len(results),
-        'debug': debug
-    }
-
     with open(cache_file, 'w') as f:
-        json.dump(cache_data, f)
+        json.dump({'results': results, 'scanned_at': datetime.now().isoformat(),
+                   'total_scanned': total, 'passed': len(results), 'debug': debug}, f)
 
-    scan_progress['progress'] = 100
-    scan_progress['current'] = f'完成！找到 {len(results)} 支股票'
-    scan_progress['done'] = total
-
+    scan_progress.update({'progress': 100, 'current': f'完成！找到 {len(results)} 支股票', 'done': total})
+    _write_progress(progress_file, dict(scan_progress))
     return results
 
 def get_cached_results(cache_file):
@@ -504,75 +337,45 @@ def get_cached_results(cache_file):
     try:
         with open(cache_file, 'r') as f:
             data = json.load(f)
-        # Check if cache is within 24 hours
-        scanned_at = datetime.fromisoformat(data['scanned_at'])
-        if datetime.now() - scanned_at > timedelta(hours=24):
+        if datetime.now() - datetime.fromisoformat(data['scanned_at']) > timedelta(hours=24):
             return None
         return data
     except:
         return None
 
 def score_single_stock(symbol):
-    """Score a single stock for search page"""
     try:
-        spy_hist = yf.Ticker('SPY').history(period='1y')
-        tech = get_technical_data(symbol, spy_hist)
-
+        spy_data = get_spy_data()
+        tech = get_technical_data_fmp(symbol, spy_data)
         fund = get_fundamental_data(symbol)
 
         if not tech:
-            # Still return basic data even if not Stage 2
-            ticker = yf.Ticker(symbol)
-            hist = ticker.history(period='6mo')
-            if len(hist) < 10:
-                return None
-
-            close = hist['Close']
-            current_price = float(close.iloc[-1])
-            prev = float(close.iloc[-2])
-
-            from market import compute_rsi, compute_atr
-            rsi = float(compute_rsi(close).iloc[-1]) if len(close) >= 14 else 50
-
-            profile = fmp_get(f'/profile/{symbol}')
-            company_name = symbol
-            sector = ''
-            if profile and len(profile) > 0:
-                company_name = profile[0].get('companyName', symbol)
-                sector = profile[0].get('sector', '')
-
+            price_data = fmp_get(f'/historical-price-full/{symbol}', {'serietype': 'line', 'timeseries': 5})
+            price = price_data['historical'][0]['close'] if price_data and 'historical' in price_data and price_data['historical'] else 0
             return {
                 'symbol': symbol,
-                'company_name': company_name,
-                'sector': sector,
-                'price': round(current_price, 2),
-                'score': 0,
-                'signal': 'watch',
-                'signal_label': '觀望',
-                'breakdown': {},
-                'stage2': False,
-                'rsi': round(rsi, 1),
-                'not_stage2': True,
+                'company_name': fund.get('company_name', symbol),
+                'sector': fund.get('sector', ''),
+                'price': price, 'score': 0,
+                'signal': 'watch', 'signal_label': '觀望',
+                'breakdown': {}, 'not_stage2': True,
                 'eps_yoy': fund.get('eps_yoy', 0),
                 'rev_yoy': fund.get('rev_yoy', 0),
             }
 
         score, signal, signal_label, breakdown = score_stock(tech, fund)
-
         return {
             'symbol': symbol,
             'company_name': fund.get('company_name', symbol),
             'sector': fund.get('sector', ''),
             'industry': fund.get('industry', ''),
-            'score': score,
-            'signal': signal,
-            'signal_label': signal_label,
+            'score': score, 'signal': signal, 'signal_label': signal_label,
             'breakdown': breakdown,
             'price': tech['price'],
             'eps_yoy': fund.get('eps_yoy', 0),
             'rev_yoy': fund.get('rev_yoy', 0),
             'rs_rating': tech['rs_rating'],
-            'beta': fund.get('beta', 1),
+            'beta': fund.get('beta', 1.5),
             'stop_loss': tech['stop_loss'],
             'target': tech['target'],
             'rr': tech['rr'],
@@ -582,5 +385,5 @@ def score_single_stock(symbol):
             'vol_mult': tech['vol_mult'],
             'stage2': tech['stage2'],
         }
-    except Exception as e:
+    except:
         return None
