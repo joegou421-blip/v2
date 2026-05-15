@@ -1,32 +1,20 @@
-from flask import Flask, jsonify, request, send_from_directory
+from flask import Flask, jsonify, send_from_directory
 from flask_cors import CORS
-import json, os, threading
+import threading, os
+from database import init_db, get_scan_results, get_meta, set_meta
 from market import get_market_overview
-from scanner import run_full_scan, get_cached_results, score_single_stock
+from scanner import run_full_scan, score_single_stock
 
 app = Flask(__name__, static_folder='../frontend', static_url_path='')
 CORS(app)
 
-CACHE_FILE = 'scan_cache.json'
 PROGRESS_FILE = 'scan_progress.json'
+_scan_thread  = None
 
-def write_progress(data):
-    try:
-        with open(PROGRESS_FILE, 'w') as f:
-            json.dump(data, f)
-    except:
-        pass
+# Init DB on startup
+init_db()
 
-def read_progress():
-    try:
-        if os.path.exists(PROGRESS_FILE):
-            with open(PROGRESS_FILE, 'r') as f:
-                return json.load(f)
-    except:
-        pass
-    return {'is_scanning': False, 'progress': 0, 'current': '', 'total': 500, 'done': 0}
-
-# ─── Serve Frontend ───────────────────────────────────────────────────────────
+# ── Static ────────────────────────────────────────────────────────────────────
 @app.route('/')
 def index():
     return send_from_directory('../frontend', 'index.html')
@@ -35,66 +23,99 @@ def index():
 def static_files(path):
     return send_from_directory('../frontend', path)
 
-# ─── Market Overview ──────────────────────────────────────────────────────────
+# ── Market (live, yfinance) ───────────────────────────────────────────────────
 @app.route('/api/market')
 def market():
     try:
-        data = get_market_overview()
-        return jsonify({'success': True, 'data': data})
+        return jsonify({'success': True, 'data': get_market_overview()})
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 500
 
-# ─── Scanner ──────────────────────────────────────────────────────────────────
+# ── Scan: start ───────────────────────────────────────────────────────────────
 @app.route('/api/scan/start', methods=['POST'])
 def start_scan():
-    prog = read_progress()
-    if prog.get('is_scanning'):
+    global _scan_thread
+    status = get_meta('scan_status') or {}
+
+    if status.get('is_scanning'):
         return jsonify({'success': False, 'error': '掃描進行中'}), 409
 
-    # Return cache if valid AND has results
-    cached = get_cached_results(CACHE_FILE)
+    # If DB already has results, return them
+    cached = get_scan_results()
     if cached and cached.get('passed', 0) > 0:
-        return jsonify({'success': True, 'cached': True, 'message': '使用緩存結果'})
+        return jsonify({'success': True, 'cached': True})
 
-    write_progress({'is_scanning': True, 'progress': 0, 'current': '初始化...', 'total': 500, 'done': 0})
+    set_meta('scan_status', {'is_scanning': True, 'progress': 0,
+                              'current': '啟動中...', 'total': 300, 'done': 0})
 
     def do_scan():
         try:
-            run_full_scan(CACHE_FILE, PROGRESS_FILE)
+            run_full_scan(PROGRESS_FILE)
         except Exception as e:
-            write_progress({'is_scanning': False, 'progress': 0, 'current': f'錯誤: {str(e)}', 'total': 500, 'done': 0})
-        finally:
-            p = read_progress()
-            p['is_scanning'] = False
-            write_progress(p)
+            print(f"[scan thread] error: {e}")
+            set_meta('scan_status', {'is_scanning': False, 'progress': 0,
+                                      'current': f'錯誤: {e}', 'total': 300, 'done': 0})
 
-    t = threading.Thread(target=do_scan, daemon=True)
-    t.start()
+    _scan_thread = threading.Thread(target=do_scan, daemon=True)
+    _scan_thread.start()
     return jsonify({'success': True, 'message': '掃描已開始'})
 
-@app.route('/api/scan/progress')
-def scan_progress_api():
-    return jsonify(read_progress())
+# ── Scan: cron trigger (called by Render Cron Job) ────────────────────────────
+@app.route('/api/scan/cron', methods=['POST', 'GET'])
+def cron_scan():
+    """Called by Render Cron Job at 04:00 UTC daily (= 12:00 noon HKT)"""
+    global _scan_thread
+    status = get_meta('scan_status') or {}
+    if status.get('is_scanning'):
+        return jsonify({'success': False, 'error': 'already running'})
 
+    set_meta('scan_status', {'is_scanning': True, 'progress': 0,
+                              'current': '定時掃描啟動...', 'total': 300, 'done': 0})
+
+    def do_cron():
+        try:
+            run_full_scan(PROGRESS_FILE)
+        except Exception as e:
+            print(f"[cron] error: {e}")
+            set_meta('scan_status', {'is_scanning': False, 'progress': 0,
+                                      'current': f'Cron錯誤: {e}', 'total': 300, 'done': 0})
+
+    threading.Thread(target=do_cron, daemon=True).start()
+    return jsonify({'success': True, 'message': 'cron scan started'})
+
+# ── Scan: progress ────────────────────────────────────────────────────────────
+@app.route('/api/scan/progress')
+def scan_progress():
+    status = get_meta('scan_status') or {
+        'is_scanning': False, 'progress': 0, 'current': '', 'total': 300, 'done': 0
+    }
+    return jsonify(status)
+
+# ── Scan: results ─────────────────────────────────────────────────────────────
 @app.route('/api/scan/results')
 def scan_results():
-    cached = get_cached_results(CACHE_FILE)
-    if cached:
-        return jsonify({'success': True, 'data': cached})
-    return jsonify({'success': False, 'error': '尚無掃描結果，請先執行掃描'})
+    data = get_scan_results()
+    if data:
+        return jsonify({'success': True, 'data': data})
+    return jsonify({'success': False, 'error': '尚無掃描結果'}), 404
 
+# ── Scan: clear ───────────────────────────────────────────────────────────────
 @app.route('/api/scan/clear', methods=['POST'])
-def clear_cache():
-    for f in [CACHE_FILE, PROGRESS_FILE]:
-        if os.path.exists(f):
-            os.remove(f)
+def clear_scan():
+    from database import get_conn
+    conn = get_conn()
+    conn.execute('DELETE FROM scan_results')
+    conn.execute("DELETE FROM scan_meta WHERE key='last_scan'")
+    conn.execute("DELETE FROM scan_meta WHERE key='scan_status'")
+    conn.commit()
+    conn.close()
     return jsonify({'success': True})
 
-# ─── Single Stock Search ──────────────────────────────────────────────────────
+# ── Single stock search ───────────────────────────────────────────────────────
 @app.route('/api/stock/<ticker>')
 def single_stock(ticker):
     try:
-        result = score_single_stock(ticker.upper())
+        result = score_single_stock(ticker.upper().strip())
         if result:
             return jsonify({'success': True, 'data': result})
         return jsonify({'success': False, 'error': f'無法取得 {ticker} 數據'}), 404

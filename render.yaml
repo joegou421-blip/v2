@@ -3,11 +3,32 @@ services:
     name: stock-scanner
     env: python
     buildCommand: pip install -r backend/requirements.txt
-    startCommand: cd backend && gunicorn app:app --workers 1 --timeout 600 --bind 0.0.0.0:$PORT
+    startCommand: cd backend && gunicorn app:app --workers 1 --timeout 0 --bind 0.0.0.0:$PORT
     envVars:
       - key: PYTHON_VERSION
         value: 3.11.0
+      - key: DB_PATH
+        value: /var/data/stocks.db
     disk:
-      name: scan-cache
-      mountPath: /backend
+      name: stocks-data
+      mountPath: /var/data
+      sizeGB: 1
+
+  - type: cron
+    name: stock-scanner-cron
+    env: python
+    buildCommand: pip install -r backend/requirements.txt
+    schedule: "0 20 * * 1-5"
+    startCommand: >
+      cd backend && python -c "
+      from database import init_db; init_db();
+      from scanner import run_full_scan; run_full_scan()"
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.11.0
+      - key: DB_PATH
+        value: /var/data/stocks.db
+    disk:
+      name: stocks-data
+      mountPath: /var/data
       sizeGB: 1
