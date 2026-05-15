@@ -1433,16 +1433,26 @@ async function searchStock() {
       const s = json.data;
       window._searchResult = s;
 
-      // Build full card with search-specific info
+      // price=0 means yfinance failed on Render
+      if (!s.price || s.price === 0) {
+        content.innerHTML = `
+          <div class="not-stage2-banner">
+            ⚠ 無法取得 ${symbol} 的即時價格<br>
+            可能原因：非美股代號、已下市、或伺服器暫時受限。請稍後重試。
+          </div>`;
+        showToast(`${symbol} 技術數據暫時不可用`, 'error');
+        return;
+      }
+
       const notStage2Banner = s.not_stage2
-        ? \`<div class="not-stage2-banner" style="margin-bottom:10px">
-            ⚠ \${symbol} 目前不在 Stage 2 上升趨勢，止損/目標僅供參考
-          </div>\`
+        ? `<div class="not-stage2-banner" style="margin-bottom:10px">
+            ⚠ ${symbol} 目前不在 Stage 2 上升趨勢，止損/目標僅供參考
+          </div>`
         : '';
 
       content.innerHTML = notStage2Banner + renderStockCard({ ...s, rank: null });
       content.querySelector('.stock-card').onclick = () => openDetail(s.symbol);
-      showToast(\`\${symbol} 評分完成\`, 'success');
+      showToast(`${symbol} 評分完成`, 'success');
     } else {
       content.innerHTML = \`
         <div class="empty-state">

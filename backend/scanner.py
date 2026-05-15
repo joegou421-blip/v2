@@ -468,51 +468,71 @@ def _get_full_technicals(symbol, spy_ret6m=0):
 
 
 def score_single_stock(symbol):
-    """Score any stock - works even if not Stage 2"""
+    """Score any stock — always returns a dict, never None"""
+    empty = {
+        'symbol': symbol, 'company_name': symbol, 'sector': '', 'industry': '',
+        'price': 0, 'score': 0, 'signal': 'watch', 'signal_label': '觀望',
+        'breakdown': {}, 'not_stage2': True, 'stage2': False,
+        'eps_yoy': None, 'rev_yoy': None, 'beta': None,
+        'rs_rating': None, 'stop_loss': None, 'target': None, 'rr': None,
+        'chase_risk': False, 'atr_pct': None, 'rsi': None, 'vol_mult': None,
+    }
+
+    # Step 1: fundamentals (FMP)
     try:
-        spy_ret6m = get_spy_ret6m()
         fund = get_fundamentals(symbol)
-
-        # Always try to get technicals (relaxed - no stage2 filter)
-        tech_full = _get_full_technicals(symbol, spy_ret6m)
-
-        base = {
-            'symbol':       symbol,
+        empty.update({
             'company_name': fund.get('company_name', symbol),
             'sector':       fund.get('sector', ''),
             'industry':     fund.get('industry', ''),
             'eps_yoy':      fund.get('eps_yoy'),
             'rev_yoy':      fund.get('rev_yoy'),
-        }
-
-        if not tech_full:
-            return {**base, 'price': 0, 'score': 0,
-                    'signal': 'watch', 'signal_label': '觀望',
-                    'breakdown': {}, 'not_stage2': True,
-                    'rs_rating': None, 'beta': fund.get('beta'),
-                    'stop_loss': None, 'target': None, 'rr': None,
-                    'chase_risk': False, 'atr_pct': None, 'rsi': None,
-                    'vol_mult': None, 'stage2': False}
-
-        # Score with stage2 flag from actual data
-        score, signal, signal_label, breakdown = score_stock(tech_full, fund)
-        return {**base,
-                'score':        score,
-                'signal':       signal,
-                'signal_label': signal_label,
-                'breakdown':    breakdown,
-                'price':        tech_full['price'],
-                'rs_rating':    tech_full['rs_rating'],
-                'beta':         fund.get('beta'),
-                'stop_loss':    tech_full['stop_loss'],
-                'target':       tech_full['target'],
-                'rr':           tech_full['rr'],
-                'chase_risk':   tech_full['chase_risk'],
-                'atr_pct':      tech_full['atr_pct'],
-                'rsi':          tech_full['rsi'],
-                'vol_mult':     tech_full['vol_mult'],
-                'stage2':       tech_full['stage2'],
-                'not_stage2':   not tech_full['stage2']}
+            'beta':         fund.get('beta'),
+        })
     except Exception as e:
-        print(f"[single] {symbol}: {e}")
-        return None
+        print(f"[single] {symbol} fund error: {e}")
+        fund = {}
+
+    # Step 2: technicals (yfinance, no stage2 gate)
+    try:
+        spy_ret6m = get_spy_ret6m()
+        tech_full = _get_full_technicals(symbol, spy_ret6m)
+    except Exception as e:
+        print(f"[single] {symbol} tech error: {e}")
+        tech_full = None
+
+    if not tech_full:
+        print(f"[single] {symbol}: no technical data — returning partial result")
+        return empty   # still has fundamental data if FMP worked
+
+    # Step 3: score
+    try:
+        score, signal, signal_label, breakdown = score_stock(tech_full, fund)
+    except Exception as e:
+        print(f"[single] {symbol} score error: {e}")
+        score, signal, signal_label, breakdown = 0, 'watch', '觀望', {}
+
+    return {
+        'symbol':       symbol,
+        'company_name': fund.get('company_name', symbol),
+        'sector':       fund.get('sector', ''),
+        'industry':     fund.get('industry', ''),
+        'eps_yoy':      fund.get('eps_yoy'),
+        'rev_yoy':      fund.get('rev_yoy'),
+        'beta':         fund.get('beta'),
+        'price':        tech_full['price'],
+        'score':        score,
+        'signal':       signal,
+        'signal_label': signal_label,
+        'breakdown':    breakdown,
+        'rs_rating':    tech_full['rs_rating'],
+        'stop_loss':    tech_full['stop_loss'],
+        'target':       tech_full['target'],
+        'rr':           tech_full['rr'],
+        'chase_risk':   tech_full['chase_risk'],
+        'atr_pct':      tech_full['atr_pct'],
+        'rsi':          tech_full['rsi'],
+        'vol_mult':     tech_full['vol_mult'],
+        'stage2':       tech_full['stage2'],
+        'not_stage2':   not tech_full['stage2'],
+    }

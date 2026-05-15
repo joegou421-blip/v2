@@ -114,12 +114,19 @@ def clear_scan():
 # ── Single stock search ───────────────────────────────────────────────────────
 @app.route('/api/stock/<ticker>')
 def single_stock(ticker):
+    symbol = ticker.upper().strip()
+    # Basic validation
+    import re
+    if not re.match(r'^[A-Z.\-]{1,10}$', symbol):
+        return jsonify({'success': False, 'error': '代號格式錯誤'}), 400
     try:
-        result = score_single_stock(ticker.upper().strip())
-        if result:
+        result = score_single_stock(symbol)
+        # score_single_stock now always returns a dict (never None)
+        if result is not None:
             return jsonify({'success': True, 'data': result})
-        return jsonify({'success': False, 'error': f'無法取得 {ticker} 數據'}), 404
+        return jsonify({'success': False, 'error': f'無法取得 {symbol} 數據'}), 404
     except Exception as e:
+        print(f"[api] /stock/{symbol} error: {e}")
         return jsonify({'success': False, 'error': str(e)}), 500
 
 if __name__ == '__main__':
