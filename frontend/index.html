@@ -1010,9 +1010,9 @@ async function refreshMarket() {
 function renderMarket(data) {
   const { indices, vix, regime } = data;
   const regimeMap = {
-    risk_on: { label: '風險偏好 Risk-On', icon: '🚀' },
-    risk_off: { label: '風險規避 Risk-Off', icon: '🛡️' },
-    neutral: { label: '中性 Neutral', icon: '⚖️' }
+    risk_on:  { label: '風險偏好 Risk-On',     icon: '🚀' },
+    risk_off: { label: '風險規避 Risk-Off ⚠️', icon: '🛡️' },
+    neutral:  { label: '中性觀望 Neutral',      icon: '⚖️' }
   };
   const r = regimeMap[regime] || regimeMap.neutral;
 
@@ -1211,11 +1211,11 @@ function renderStockCard(s) {
       <div class="sc-stats">
         <div class="sc-stat-item">
           <div class="sc-stat-label">EPS增長</div>
-          <div class="sc-stat-value" style="color:${s.eps_yoy > 0 ? 'var(--green)' : 'var(--red)'}">${s.eps_yoy > 0 ? '+' : ''}${s.eps_yoy?.toFixed(1) || '--'}%</div>
+          <div class="sc-stat-value" style="color:${s.eps_yoy==null?'var(--text3)':s.eps_yoy>0?'var(--green)':'var(--red)'}">${s.eps_yoy==null?'--':(s.eps_yoy>0?'+':'')+s.eps_yoy.toFixed(1)+'%'}</div>
         </div>
         <div class="sc-stat-item">
           <div class="sc-stat-label">收入增長</div>
-          <div class="sc-stat-value" style="color:${s.rev_yoy > 0 ? 'var(--green)' : 'var(--red)'}">${s.rev_yoy > 0 ? '+' : ''}${s.rev_yoy?.toFixed(1) || '--'}%</div>
+          <div class="sc-stat-value" style="color:${s.rev_yoy==null?'var(--text3)':s.rev_yoy>0?'var(--green)':'var(--red)'}">${s.rev_yoy==null?'--':(s.rev_yoy>0?'+':'')+s.rev_yoy.toFixed(1)+'%'}</div>
         </div>
         <div class="sc-stat-item">
           <div class="sc-stat-label">RS評級</div>
