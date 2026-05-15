@@ -389,49 +389,130 @@ def run_full_scan(progress_file=None):
     return results
 
 # ── Score single stock (for search page, live) ───────────────────────────────
+def _get_full_technicals(symbol, spy_ret6m=0):
+    """Like get_technicals but WITHOUT stage2 filter — for single stock search"""
+    try:
+        hist = yf.Ticker(symbol).history(period='2y', timeout=30)
+        if hist is None or len(hist) < 60:
+            return None
+
+        close  = hist['Close'].dropna()
+        high   = hist['High'].dropna()
+        low    = hist['Low'].dropna()
+        volume = hist['Volume'].dropna()
+
+        if len(close) < 2:
+            return None
+
+        price = float(close.iloc[-1])
+        if price <= 0:
+            return None
+
+        sma50  = float(close.rolling(50).mean().iloc[-1]) if len(close) >= 50 else None
+        sma200 = None
+        stage2 = False
+
+        if len(close) >= 200:
+            s200 = close.rolling(200).mean().dropna()
+            if len(s200) >= 11:
+                sma200     = float(s200.iloc[-1])
+                sma200_old = float(s200.iloc[-11])
+                rising     = sma200 > sma200_old
+                stage2     = bool(price > sma200 and sma50 and sma50 > sma200 and rising)
+
+        atr_s = compute_atr(high, low, close).dropna()
+        atr   = float(atr_s.iloc[-1]) if len(atr_s) else price * 0.02
+        atr_pct = atr / price * 100
+
+        rsi_s = compute_rsi(close).dropna()
+        rsi   = float(rsi_s.iloc[-1]) if len(rsi_s) else 50.0
+
+        vol_nz  = volume[volume > 0]
+        avg_vol = float(vol_nz.tail(20).mean()) if len(vol_nz) >= 20 else float(vol_nz.mean() or 1)
+        vol_mult = round(float(volume.iloc[-1]) / avg_vol, 2) if avg_vol else 1.0
+        monthly_dv = price * avg_vol * 21
+
+        ret6m = (price / float(close.iloc[-126]) - 1)*100 if len(close) >= 126 else 0
+        if spy_ret6m and spy_ret6m != 0:
+            rel = ret6m - spy_ret6m
+            rs_rating = round(min(100, max(0, 50 + rel * 1.5)), 1)
+        else:
+            rs_rating = round(min(100, max(0, 40 + ret6m * 1.2)), 1)
+
+        swing_low = float(low.tail(20).min()) if len(low) >= 20 else price * 0.95
+        stop_loss = round(swing_low * 0.99, 2)
+        risk      = max(price - stop_loss, price * 0.02)
+        target    = round(price + risk * 2.5, 2)
+        rr        = round((target - price) / risk, 2)
+        chase_risk = (risk / atr) > 1.5 if atr else False
+
+        return {
+            'price':      round(price, 2),
+            'sma50':      round(sma50, 2) if sma50 else None,
+            'sma200':     round(sma200, 2) if sma200 else None,
+            'stage2':     stage2,
+            'atr':        round(atr, 2),
+            'atr_pct':    round(atr_pct, 2),
+            'rsi':        round(rsi, 1),
+            'vol_mult':   vol_mult,
+            'monthly_dv': monthly_dv,
+            'rs_rating':  rs_rating,
+            'stop_loss':  stop_loss,
+            'target':     target,
+            'rr':         rr,
+            'chase_risk': chase_risk,
+        }
+    except Exception as e:
+        print(f"[full_tech] {symbol}: {e}")
+        return None
+
+
 def score_single_stock(symbol):
+    """Score any stock - works even if not Stage 2"""
     try:
         spy_ret6m = get_spy_ret6m()
-        tech = get_technicals(symbol, spy_ret6m)
         fund = get_fundamentals(symbol)
+
+        # Always try to get technicals (relaxed - no stage2 filter)
+        tech_full = _get_full_technicals(symbol, spy_ret6m)
 
         base = {
             'symbol':       symbol,
             'company_name': fund.get('company_name', symbol),
             'sector':       fund.get('sector', ''),
             'industry':     fund.get('industry', ''),
-            'eps_yoy':      fund.get('eps_yoy', 0),
-            'rev_yoy':      fund.get('rev_yoy', 0),
+            'eps_yoy':      fund.get('eps_yoy'),
+            'rev_yoy':      fund.get('rev_yoy'),
         }
 
-        if not tech:
-            # Try to get at least the current price
-            try:
-                hist  = yf.Ticker(symbol).history(period='5d', timeout=15)
-                price = float(hist['Close'].iloc[-1]) if hist is not None and len(hist) else 0
-            except:
-                price = 0
-            return {**base, 'price': price, 'score': 0,
+        if not tech_full:
+            return {**base, 'price': 0, 'score': 0,
                     'signal': 'watch', 'signal_label': '觀望',
-                    'breakdown': {}, 'not_stage2': True}
+                    'breakdown': {}, 'not_stage2': True,
+                    'rs_rating': None, 'beta': fund.get('beta'),
+                    'stop_loss': None, 'target': None, 'rr': None,
+                    'chase_risk': False, 'atr_pct': None, 'rsi': None,
+                    'vol_mult': None, 'stage2': False}
 
-        score, signal, signal_label, breakdown = score_stock(tech, fund)
+        # Score with stage2 flag from actual data
+        score, signal, signal_label, breakdown = score_stock(tech_full, fund)
         return {**base,
                 'score':        score,
                 'signal':       signal,
                 'signal_label': signal_label,
                 'breakdown':    breakdown,
-                'price':        tech['price'],
-                'rs_rating':    tech['rs_rating'],
-                'beta':         fund.get('beta', 1.5),
-                'stop_loss':    tech['stop_loss'],
-                'target':       tech['target'],
-                'rr':           tech['rr'],
-                'chase_risk':   tech['chase_risk'],
-                'atr_pct':      tech['atr_pct'],
-                'rsi':          tech['rsi'],
-                'vol_mult':     tech['vol_mult'],
-                'stage2':       True}
+                'price':        tech_full['price'],
+                'rs_rating':    tech_full['rs_rating'],
+                'beta':         fund.get('beta'),
+                'stop_loss':    tech_full['stop_loss'],
+                'target':       tech_full['target'],
+                'rr':           tech_full['rr'],
+                'chase_risk':   tech_full['chase_risk'],
+                'atr_pct':      tech_full['atr_pct'],
+                'rsi':          tech_full['rsi'],
+                'vol_mult':     tech_full['vol_mult'],
+                'stage2':       tech_full['stage2'],
+                'not_stage2':   not tech_full['stage2']}
     except Exception as e:
         print(f"[single] {symbol}: {e}")
         return None

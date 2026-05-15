@@ -817,6 +817,61 @@ html, body {
 .toast.show { transform: translateY(0); opacity: 1; }
 .toast.success { background: var(--green-dim); border-color: var(--green-border); color: var(--green); }
 
+/* Risk-Off page tint */
+body.regime-risk_off { background: #110a0a; }
+body.regime-risk_off .header { background: #110a0a; }
+body.regime-risk_off .nav { background: #110a0a; }
+.regime-tint-bar {
+  height: 3px;
+  width: 100%;
+  transition: background 0.5s;
+}
+body.regime-risk_off .regime-tint-bar { background: linear-gradient(90deg, var(--red), #ff6644, var(--red)); }
+body.regime-risk_on  .regime-tint-bar { background: linear-gradient(90deg, var(--green), #44ffaa, var(--green)); }
+body.regime-neutral  .regime-tint-bar { background: var(--border); }
+body.regime-no_data  .regime-tint-bar { background: #444; }
+
+/* Signal banners */
+.signal-banner {
+  border-radius: 10px;
+  padding: 9px 13px;
+  font-size: 12px;
+  margin-bottom: 8px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 500;
+}
+.signal-banner.warning { background: #ffc93c18; border: 1px solid #ffc93c40; color: var(--yellow); }
+.signal-banner.danger  { background: var(--red-dim); border: 1px solid var(--red-border); color: var(--red); }
+.signal-banner.info    { background: #4fc3f718; border: 1px solid #4fc3f740; color: var(--signal-buy); }
+
+/* VIX momentum badge */
+.vix-momentum {
+  font-size: 10px;
+  font-weight: 700;
+  padding: 2px 7px;
+  border-radius: 4px;
+  margin-top: 4px;
+  display: inline-block;
+}
+.vix-momentum.spike   { background: var(--red-dim);    color: var(--red);    border: 1px solid var(--red-border); }
+.vix-momentum.surge   { background: var(--red-dim);    color: var(--red);    border: 1px solid var(--red-border); }
+.vix-momentum.rising  { background: #ff880018;         color: #ff8800;       border: 1px solid #ff880040; }
+.vix-momentum.falling { background: var(--green-dim);  color: var(--green);  border: 1px solid var(--green-border); }
+.vix-momentum.plunging{ background: var(--green-dim);  color: var(--green);  border: 1px solid var(--green-border); }
+
+/* SPY missing banner */
+.spy-missing {
+  background: #ff880018;
+  border: 1px solid #ff880040;
+  border-radius: 10px;
+  padding: 9px 13px;
+  font-size: 12px;
+  color: #ff8800;
+  margin-bottom: 8px;
+}
+
 /* Scrollbar */
 ::-webkit-scrollbar { width: 4px; }
 ::-webkit-scrollbar-track { background: transparent; }
@@ -851,6 +906,7 @@ html, body {
       <div class="header-time" id="headerTime">--:--:--</div>
     </div>
   </header>
+  <div class="regime-tint-bar" id="regimeTintBar"></div>
 
   <!-- PAGE 1: MARKET OVERVIEW -->
   <div class="page active" id="page-market">
@@ -1008,11 +1064,15 @@ async function refreshMarket() {
 }
 
 function renderMarket(data) {
-  const { indices, vix, regime } = data;
+  const { indices, vix, regime, signals, spy_ok, updated_at } = data;
+  // Apply regime tint to body
+  document.body.className = document.body.className.replace(/regime-\S+/g, '');
+  document.body.classList.add('regime-' + regime);
   const regimeMap = {
-    risk_on:  { label: '風險偏好 Risk-On',     icon: '🚀' },
-    risk_off: { label: '風險規避 Risk-Off ⚠️', icon: '🛡️' },
-    neutral:  { label: '中性觀望 Neutral',      icon: '⚖️' }
+    risk_on:  { label: '風險偏好 Risk-On',       icon: '🚀' },
+    risk_off: { label: '風險規避 Risk-Off ⚠️',   icon: '🛡️' },
+    neutral:  { label: '中性觀望 Neutral',         icon: '⚖️' },
+    no_data:  { label: '基準異常 — 暫停選股',      icon: '⚠️' },
   };
   const r = regimeMap[regime] || regimeMap.neutral;
 
@@ -1052,12 +1112,16 @@ function renderMarket(data) {
   }).join('');
 
   const vixLevelMap = { calm: '平靜', neutral: '中性', fear: '恐懼', extreme_fear: '極度恐懼' };
+  const vixMomentumMap = { spike: '暴漲 ‼️', surge: '飆升 ⚠️', rising: '上升 ↑', falling: '下降 ↓', plunging: '急跌 ↓↓' };
   const vixHTML = vix ? `
     <div class="vix-card">
       <div class="vix-left">
         <div class="vix-label">CBOE 恐懼指數 VIX</div>
         <div class="vix-value" style="color:${vix.value > 25 ? 'var(--red)' : vix.value > 18 ? 'var(--yellow)' : 'var(--green)'}">${vix.value}</div>
-        <div class="vix-change ${vix.change >= 0 ? 'up' : 'down'}" style="color:${vix.change >= 0 ? 'var(--red)' : 'var(--green)'}">${vix.change >= 0 ? '+' : ''}${vix.change} (${vix.change_pct}%)</div>
+        <div class="vix-change ${vix.change >= 0 ? 'up' : 'down'}" style="color:${vix.change >= 0 ? 'var(--red)' : 'var(--green)'}">
+          ${vix.change >= 0 ? '+' : ''}${vix.change} (${vix.change_pct > 0 ? '+' : ''}${vix.change_pct}%)
+        </div>
+        ${vix.momentum ? `<div class="vix-momentum ${vix.momentum}">${vixMomentumMap[vix.momentum] || vix.momentum}</div>` : ''}
       </div>
       <div class="vix-level ${vix.level}">${vixLevelMap[vix.level] || vix.level}</div>
     </div>` : '';
@@ -1077,7 +1141,9 @@ function renderMarket(data) {
     <div class="market-grid">${cardsHTML}</div>
     <div class="section-title">波動率指標</div>
     ${vixHTML}
-    ${updatedAt ? `<div style="text-align:right;font-size:10px;color:var(--text3);margin-top:10px">更新時間：${updatedAt}</div>` : ''}
+    ${(signals||[]).map(s => `<div class="signal-banner ${s.type}">⚡ ${s.msg}</div>`).join('')}
+    ${!spy_ok ? '<div class="spy-missing">⚠ SPY 基準數據異常，已切換至 QQQ 影子基準，選股排名結果僅供參考</div>' : ''}
+    ${updated_at ? `<div style="text-align:right;font-size:10px;color:var(--text3);margin-top:10px">後端更新：${new Date(updated_at).toLocaleTimeString('zh-TW')}</div>` : ''}
   `;
 }
 
@@ -1198,7 +1264,7 @@ function renderStockCard(s) {
     <div class="stock-card signal-${s.signal}" onclick="openDetail('${s.symbol}')">
       <div class="sc-top">
         <div class="sc-left">
-          <div class="sc-rank">#${s.rank}</div>
+          <div class="sc-rank">${s.rank ? "#"+s.rank : ""}</div>
           <div class="sc-symbol">${s.symbol}</div>
           <div class="sc-name">${s.company_name || ''}</div>
           <div class="sc-industry">${s.industry || s.sector || ''}</div>
@@ -1338,32 +1404,63 @@ function scoreColor(score) {
 
 // ─── SEARCH ───────────────────────────────────────────────────────────────────
 async function searchStock() {
-  const input = document.getElementById('searchInput');
-  const symbol = input.value.trim().toUpperCase();
-  if (!symbol) return;
+  const input   = document.getElementById('searchInput');
+  const btn     = document.querySelector('#page-search .search-btn');
+  const symbol  = input.value.trim().toUpperCase();
+  if (!symbol) { showToast('請輸入股票代號'); return; }
+
+  // Validate basic format
+  if (!/^[A-Z.\-]{1,10}$/.test(symbol)) {
+    showToast('代號格式錯誤，請輸入英文字母'); return;
+  }
 
   const content = document.getElementById('searchContent');
-  content.innerHTML = `<div class="loading-spinner"><div class="spinner"></div></div>`;
+
+  // Loading state
+  btn.disabled  = true;
+  btn.textContent = '計算中...';
+  content.innerHTML = `
+    <div class="loading-spinner"><div class="spinner"></div></div>
+    <div style="text-align:center;font-size:12px;color:var(--text3);margin-top:8px">
+      正在呼叫 yfinance + FMP 即時數據，約需 10-20 秒...
+    </div>`;
 
   try {
-    const res = await fetch(`${API_BASE}/api/stock/${symbol}`);
+    const res  = await fetch(\`\${API_BASE}/api/stock/\${symbol}\`);
     const json = await res.json();
-    if (json.success) {
-      window._searchResult = json.data;
+
+    if (json.success && json.data) {
       const s = json.data;
-      content.innerHTML = renderStockCard({ ...s, rank: undefined });
-      // Override click to open detail
+      window._searchResult = s;
+
+      // Build full card with search-specific info
+      const notStage2Banner = s.not_stage2
+        ? \`<div class="not-stage2-banner" style="margin-bottom:10px">
+            ⚠ \${symbol} 目前不在 Stage 2 上升趨勢，止損/目標僅供參考
+          </div>\`
+        : '';
+
+      content.innerHTML = notStage2Banner + renderStockCard({ ...s, rank: null });
       content.querySelector('.stock-card').onclick = () => openDetail(s.symbol);
+      showToast(\`\${symbol} 評分完成\`, 'success');
     } else {
-      content.innerHTML = `
+      content.innerHTML = \`
         <div class="empty-state">
           <div class="empty-icon">❌</div>
-          <div class="empty-text">找不到 ${symbol}</div>
-          <div class="empty-sub">${json.error || '請確認代號正確'}</div>
-        </div>`;
+          <div class="empty-text">找不到此股票代號：\${symbol}</div>
+          <div class="empty-sub">\${json.error || '請確認代號是否正確，例如 AAPL、TSLA、NVDA'}</div>
+        </div>\`;
     }
   } catch (e) {
-    content.innerHTML = `<div class="empty-state"><div class="empty-icon">🌐</div><div class="empty-text">連線失敗</div></div>`;
+    content.innerHTML = \`
+      <div class="empty-state">
+        <div class="empty-icon">🌐</div>
+        <div class="empty-text">連線失敗</div>
+        <div class="empty-sub">請稍後再試</div>
+      </div>\`;
+  } finally {
+    btn.disabled    = false;
+    btn.textContent = '查詢評分';
   }
 }
 
