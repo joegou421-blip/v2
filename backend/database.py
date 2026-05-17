@@ -1,47 +1,35 @@
-import sqlite3
-import json
-import os
-from datetime import datetime
+import sqlite3, json, os
+from datetime import datetime, timedelta
 
-DB_PATH = os.environ.get('DB_PATH', 'stocks.db')
+# Use /tmp for Render free tier (survives between requests, resets on redeploy)
+# For paid disk, set DB_PATH=/var/data/stocks.db in Render env vars
+DB_PATH = os.environ.get('DB_PATH', '/tmp/stocks.db')
 
 def get_conn():
-    conn = sqlite3.connect(DB_PATH, check_same_thread=False)
+    conn = sqlite3.connect(DB_PATH, check_same_thread=False, timeout=30)
     conn.row_factory = sqlite3.Row
+    conn.execute('PRAGMA journal_mode=WAL')  # Better concurrent access
     return conn
 
 def init_db():
     conn = get_conn()
     c = conn.cursor()
-
-    # Scan results table
-    c.execute('''
-        CREATE TABLE IF NOT EXISTS scan_results (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            symbol TEXT NOT NULL,
-            scanned_at TEXT NOT NULL,
-            data TEXT NOT NULL
-        )
-    ''')
-
-    # Scan metadata
-    c.execute('''
-        CREATE TABLE IF NOT EXISTS scan_meta (
-            key TEXT PRIMARY KEY,
-            value TEXT NOT NULL,
-            updated_at TEXT NOT NULL
-        )
-    ''')
-
-    # Fundamental cache (updates weekly)
-    c.execute('''
-        CREATE TABLE IF NOT EXISTS fundamental_cache (
-            symbol TEXT PRIMARY KEY,
-            data TEXT NOT NULL,
-            cached_at TEXT NOT NULL
-        )
-    ''')
-
+    c.execute('''CREATE TABLE IF NOT EXISTS scan_results (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        symbol TEXT NOT NULL,
+        scanned_at TEXT NOT NULL,
+        data TEXT NOT NULL
+    )''')
+    c.execute('''CREATE TABLE IF NOT EXISTS scan_meta (
+        key TEXT PRIMARY KEY,
+        value TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+    )''')
+    c.execute('''CREATE TABLE IF NOT EXISTS fundamental_cache (
+        symbol TEXT PRIMARY KEY,
+        data TEXT NOT NULL,
+        cached_at TEXT NOT NULL
+    )''')
     conn.commit()
     conn.close()
 
@@ -49,82 +37,77 @@ def save_scan_results(results, total_scanned):
     conn = get_conn()
     c = conn.cursor()
     now = datetime.now().isoformat()
-
-    # Clear old results
     c.execute('DELETE FROM scan_results')
-
-    # Insert new results
     for r in results:
-        c.execute(
-            'INSERT INTO scan_results (symbol, scanned_at, data) VALUES (?,?,?)',
-            (r['symbol'], now, json.dumps(r))
-        )
-
-    # Update meta
-    c.execute('''
-        INSERT OR REPLACE INTO scan_meta (key, value, updated_at)
-        VALUES (?, ?, ?)
-    ''', ('last_scan', json.dumps({
-        'scanned_at': now,
-        'total_scanned': total_scanned,
-        'passed': len(results)
-    }), now))
-
+        c.execute('INSERT INTO scan_results (symbol, scanned_at, data) VALUES (?,?,?)',
+                  (r['symbol'], now, json.dumps(r)))
+    c.execute('INSERT OR REPLACE INTO scan_meta (key, value, updated_at) VALUES (?,?,?)',
+              ('last_scan', json.dumps({
+                  'scanned_at': now,
+                  'total_scanned': total_scanned,
+                  'passed': len(results)
+              }), now))
     conn.commit()
     conn.close()
 
 def get_scan_results():
-    conn = get_conn()
-    c = conn.cursor()
-
-    meta = c.execute("SELECT value FROM scan_meta WHERE key='last_scan'").fetchone()
-    if not meta:
+    try:
+        conn = get_conn()
+        c = conn.cursor()
+        meta = c.execute("SELECT value FROM scan_meta WHERE key='last_scan'").fetchone()
+        if not meta:
+            conn.close()
+            return None
+        meta_data = json.loads(meta['value'])
+        rows = c.execute('SELECT data FROM scan_results ORDER BY rowid').fetchall()
+        results = [json.loads(r['data']) for r in rows]
         conn.close()
+        return {**meta_data, 'results': results}
+    except:
         return None
-
-    meta_data = json.loads(meta['value'])
-    rows = c.execute('SELECT data FROM scan_results ORDER BY rowid').fetchall()
-    results = [json.loads(r['data']) for r in rows]
-
-    conn.close()
-    return {**meta_data, 'results': results}
 
 def get_fundamental_cache(symbol):
-    conn = get_conn()
-    c = conn.cursor()
-    row = c.execute('SELECT data, cached_at FROM fundamental_cache WHERE symbol=?', (symbol,)).fetchone()
-    conn.close()
-    if not row:
+    try:
+        conn = get_conn()
+        c = conn.cursor()
+        row = c.execute('SELECT data, cached_at FROM fundamental_cache WHERE symbol=?',
+                        (symbol,)).fetchone()
+        conn.close()
+        if not row:
+            return None
+        # Cache fundamentals for 7 days
+        if datetime.now() - datetime.fromisoformat(row['cached_at']) > timedelta(days=7):
+            return None
+        return json.loads(row['data'])
+    except:
         return None
-    # Cache fundamentals for 7 days
-    from datetime import timedelta
-    cached_at = datetime.fromisoformat(row['cached_at'])
-    if datetime.now() - cached_at > timedelta(days=7):
-        return None
-    return json.loads(row['data'])
 
 def save_fundamental_cache(symbol, data):
-    conn = get_conn()
-    c = conn.cursor()
-    c.execute('''
-        INSERT OR REPLACE INTO fundamental_cache (symbol, data, cached_at)
-        VALUES (?, ?, ?)
-    ''', (symbol, json.dumps(data), datetime.now().isoformat()))
-    conn.commit()
-    conn.close()
+    try:
+        conn = get_conn()
+        conn.execute('INSERT OR REPLACE INTO fundamental_cache (symbol, data, cached_at) VALUES (?,?,?)',
+                     (symbol, json.dumps(data), datetime.now().isoformat()))
+        conn.commit()
+        conn.close()
+    except Exception as e:
+        print(f"[db] save_fundamental_cache {symbol}: {e}")
 
 def set_meta(key, value):
-    conn = get_conn()
-    c = conn.cursor()
-    c.execute('''
-        INSERT OR REPLACE INTO scan_meta (key, value, updated_at) VALUES (?,?,?)
-    ''', (key, json.dumps(value), datetime.now().isoformat()))
-    conn.commit()
-    conn.close()
+    try:
+        conn = get_conn()
+        conn.execute('INSERT OR REPLACE INTO scan_meta (key, value, updated_at) VALUES (?,?,?)',
+                     (key, json.dumps(value), datetime.now().isoformat()))
+        conn.commit()
+        conn.close()
+    except Exception as e:
+        print(f"[db] set_meta {key}: {e}")
 
 def get_meta(key):
-    conn = get_conn()
-    c = conn.cursor()
-    row = c.execute('SELECT value FROM scan_meta WHERE key=?', (key,)).fetchone()
-    conn.close()
-    return json.loads(row['value']) if row else None
+    try:
+        conn = get_conn()
+        c = conn.cursor()
+        row = c.execute('SELECT value FROM scan_meta WHERE key=?', (key,)).fetchone()
+        conn.close()
+        return json.loads(row['value']) if row else None
+    except:
+        return None
