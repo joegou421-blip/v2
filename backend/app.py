@@ -106,9 +106,10 @@ def scan_progress():
 @app.route('/api/scan/results')
 def scan_results():
     data = get_scan_results()
-    if data:
+    if data and data.get('passed', 0) > 0:
         return jsonify({'success': True, 'data': data})
-    return jsonify({'success': False, 'error': '尚無掃描結果'}), 404
+    # Return 200 with empty flag instead of 404 — avoids console errors
+    return jsonify({'success': False, 'error': '尚無掃描結果，請執行掃描', 'empty': True})
 
 # ── Scan: clear ───────────────────────────────────────────────────────────────
 @app.route('/api/scan/clear', methods=['POST'])

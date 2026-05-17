@@ -1115,7 +1115,7 @@ function renderMarket(data) {
   const vixMomentumMap = { spike: '暴漲 ‼️', surge: '飆升 ⚠️', rising: '上升 ↑', falling: '下降 ↓', plunging: '急跌 ↓↓' };
   const vixHTML = vix ? (() => {
     // 🚨 PANIC CONDITION: value >= 20 OR single-day change >= 5%
-    const isPanic = vix.value >= 20 || vix.change_pct >= 5;
+    const isPanic = Number(vix.value) >= 20 || Number(vix.change_pct) >= 5;
     const vixColor = isPanic ? 'var(--red)' : vix.value > 18 ? 'var(--yellow)' : 'var(--green)';
     const vixLabel = isPanic
       ? `<div class="vix-level extreme_fear" style="font-size:13px;padding:5px 12px">恐慌 / 高波動 🚨</div>`
@@ -1285,7 +1285,7 @@ function renderStockCard(s) {
       <div class="sc-stats">
         <div class="sc-stat-item">
           <div class="sc-stat-label">EPS增長</div>
-          <div class="sc-stat-value" style="color:${s.eps_yoy==null?'var(--text3)':s.eps_yoy>0?'var(--green)':'var(--red)'}">${s.eps_yoy==null?'--':(s.eps_yoy>0?'+':'')+s.eps_yoy.toFixed(1)+'%'}</div>
+          <div class="sc-stat-value" style="color:${s.eps_yoy==null?(s.breakdown?.turned_profitable?.pass?'var(--green)':'var(--text3)'):s.eps_yoy>0?'var(--green)':'var(--red)'}">${s.eps_yoy==null?(s.breakdown?.turned_profitable?.pass?'↑轉盈':'--'):(s.eps_yoy>0?'+':'')+s.eps_yoy.toFixed(1)+'%'}</div>
         </div>
         <div class="sc-stat-item">
           <div class="sc-stat-label">收入增長</div>

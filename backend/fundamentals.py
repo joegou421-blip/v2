@@ -13,6 +13,24 @@ from database import get_fundamental_cache, save_fundamental_cache
 
 HEADERS_SEC = {'User-Agent': 'StockScanner/1.0 contact@example.com Accept-Encoding: gzip, deflate'}
 
+def _safe_eps_yoy(current, prior):
+    """
+    EPS YoY that handles sign changes correctly.
+    Returns (pct_or_None, is_turnaround_bool)
+    - turnaround (loss→profit): returns (None, True) — don't show misleading negative %
+    - both negative deepening: returns (negative%, False)
+    - both positive or positive→negative: standard formula
+    """
+    try:
+        if prior is None or current is None: return None, False
+        c, p = float(current), float(prior)
+        if p < 0 and c > 0:   return None, True          # Turnaround!
+        if p < 0 and c <= 0:  return round((c-p)/abs(p)*100, 1), False  # Deeper loss
+        if p > 0:             return round((c-p)/p*100, 1), False        # Standard
+        return None, False
+    except:
+        return None, False
+
 # ── CIK lookup (fast: use direct ticker endpoint) ────────────────────────────
 _cik_cache = {}
 
@@ -146,11 +164,10 @@ def _from_yfinance(symbol, hist_close=None, spy_close=None):
 
             if ni_row is not None and len(ni_row) >= 5:
                 ni = ni_row
-                if ni[4] != 0: eps_yoy = round((ni[0]-ni[4])/abs(ni[4])*100, 1)
+                eps_yoy, turned = _safe_eps_yoy(ni[0], ni[4])
                 gr = [(ni[i]-ni[i+1])/abs(ni[i+1])*100 for i in range(min(4,len(ni)-1)) if ni[i+1]!=0]
                 accel2  = bool(len(gr)>=2 and gr[0]>gr[1])
                 accel3  = bool(len(gr)>=3 and gr[0]>gr[1]>gr[2])
-                turned  = bool(len(ni)>=2 and ni[0]>0 and ni[1]<=0)
 
             if rev_row is not None and len(rev_row) >= 5:
                 rev = rev_row
@@ -213,11 +230,10 @@ def _from_sec_edgar(symbol):
 
         if len(ni_q) >= 5:
             ni = [q['val'] for q in ni_q]
-            if ni[4] != 0: eps_yoy = round((ni[0]-ni[4])/abs(ni[4])*100, 1)
+            eps_yoy, turned = _safe_eps_yoy(ni[0], ni[4])
             gr = [(ni[i]-ni[i+1])/abs(ni[i+1])*100 for i in range(min(4,len(ni)-1)) if ni[i+1]!=0]
             accel2 = bool(len(gr)>=2 and gr[0]>gr[1])
             accel3 = bool(len(gr)>=3 and gr[0]>gr[1]>gr[2])
-            turned = bool(len(ni)>=2 and ni[0]>0 and ni[1]<=0)
 
         if len(rev_q) >= 5:
             rev = [q['val'] for q in rev_q]

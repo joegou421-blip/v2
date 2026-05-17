@@ -165,15 +165,21 @@ def _to_native(v):
     return v
 
 def score_stock(tech, fund):
+    # If eps_yoy is None but it's a turnaround, treat as positive signal
+    eps_yoy_val = fund.get('eps_yoy')
+    is_turnaround = bool(fund.get('turned_profitable', False))
+    # Turnaround stocks: eps_yoy=None means loss→profit, auto-qualify for >20% check
+    eps_yoy_passes = bool(eps_yoy_val is not None and eps_yoy_val > 20) or is_turnaround
+
     checks = [
-        ('eps_yoy',           bool((fund.get('eps_yoy') or 0)>20),        2, 'EPS年增長 > 20%',   fund.get('eps_yoy')),
+        ('eps_yoy',           eps_yoy_passes,                              2, 'EPS年增長 > 20%',   eps_yoy_val),
         ('eps_accel_2q',      bool(fund.get('eps_accel_2q',False)),        2, 'EPS連續2季加速',     None),
         ('eps_accel_3q',      bool(fund.get('eps_accel_3q',False)),        1, 'EPS連續3季加速',     None),
         ('rev_growth',        bool((fund.get('rev_yoy') or 0)>15),         1, '收入增長 > 15%',     fund.get('rev_yoy')),
         ('eps_beat',          bool(fund.get('eps_beat',False)),             2, 'EPS超越分析師預期',  None),
         ('rev_beat',          bool(fund.get('rev_beat',False)),             1, '收入超越分析師預期', None),
         ('gm_expanding',      bool(fund.get('gm_expanding',False)),         1, '毛利率擴張',         None),
-        ('turned_profitable', bool(fund.get('turned_profitable',False)),    1, '由虧轉盈',           None),
+        ('turned_profitable', is_turnaround,                               1, '由虧轉盈',           None),
         ('rs_rating',         bool((tech.get('rs_rating') or 0)>70),       2, 'RS評級 > 70',        tech.get('rs_rating')),
         ('stage2',            bool(tech.get('stage2',False)),               2, 'Stage 2 確認',       None),
     ]
