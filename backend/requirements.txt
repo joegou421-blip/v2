@@ -5,3 +5,7 @@ pandas
 numpy
 requests
 gunicorn
+openbb-core
+openbb-equity
+openbb-yfinance
+openbb-sec
