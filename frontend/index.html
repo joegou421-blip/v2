@@ -1113,18 +1113,26 @@ function renderMarket(data) {
 
   const vixLevelMap = { calm: '平靜', neutral: '中性', fear: '恐懼', extreme_fear: '極度恐懼' };
   const vixMomentumMap = { spike: '暴漲 ‼️', surge: '飆升 ⚠️', rising: '上升 ↑', falling: '下降 ↓', plunging: '急跌 ↓↓' };
-  const vixHTML = vix ? `
-    <div class="vix-card">
+  const vixHTML = vix ? (() => {
+    // 🚨 PANIC CONDITION: value >= 20 OR single-day change >= 5%
+    const isPanic = vix.value >= 20 || vix.change_pct >= 5;
+    const vixColor = isPanic ? 'var(--red)' : vix.value > 18 ? 'var(--yellow)' : 'var(--green)';
+    const vixLabel = isPanic
+      ? `<div class="vix-level extreme_fear" style="font-size:13px;padding:5px 12px">恐慌 / 高波動 🚨</div>`
+      : `<div class="vix-level ${vix.level}">${vixLevelMap[vix.level] || vix.level}</div>`;
+    const panicBorder = isPanic ? 'border:1.5px solid var(--red);background:var(--red-dim)' : '';
+    return `<div class="vix-card" style="${panicBorder}">
       <div class="vix-left">
         <div class="vix-label">CBOE 恐懼指數 VIX</div>
-        <div class="vix-value" style="color:${vix.value > 25 ? 'var(--red)' : vix.value > 18 ? 'var(--yellow)' : 'var(--green)'}">${vix.value}</div>
+        <div class="vix-value" style="color:${vixColor}">${vix.value}</div>
         <div class="vix-change ${vix.change >= 0 ? 'up' : 'down'}" style="color:${vix.change >= 0 ? 'var(--red)' : 'var(--green)'}">
           ${vix.change >= 0 ? '+' : ''}${vix.change} (${vix.change_pct > 0 ? '+' : ''}${vix.change_pct}%)
         </div>
         ${vix.momentum ? `<div class="vix-momentum ${vix.momentum}">${vixMomentumMap[vix.momentum] || vix.momentum}</div>` : ''}
       </div>
-      <div class="vix-level ${vix.level}">${vixLevelMap[vix.level] || vix.level}</div>
-    </div>` : '';
+      ${vixLabel}
+    </div>`;
+  })() : '';
 
   const updatedAt = data.updated_at ? new Date(data.updated_at).toLocaleTimeString('zh-TW') : '';
 
@@ -1285,11 +1293,11 @@ function renderStockCard(s) {
         </div>
         <div class="sc-stat-item">
           <div class="sc-stat-label">RS評級</div>
-          <div class="sc-stat-value" style="color:${s.rs_rating > 70 ? 'var(--green)' : 'var(--text2)'}">${s.rs_rating || '--'}</div>
+          <div class="sc-stat-value" style="color:${s.rs_rating >= 80 ? 'var(--green)' : s.rs_rating >= 60 ? 'var(--yellow)' : 'var(--text2)'}">${s.rs_rating != null ? s.rs_rating : '--'}</div>
         </div>
         <div class="sc-stat-item">
           <div class="sc-stat-label">Beta</div>
-          <div class="sc-stat-value">${s.beta?.toFixed(2) || '--'}</div>
+          <div class="sc-stat-value">${(s.beta != null) ? Number(s.beta).toFixed(2) : '--'}</div>
         </div>
       </div>
       <div class="sc-trade">
@@ -1350,6 +1358,7 @@ function openDetail(symbol) {
         <div>
           <div class="detail-company">${stock.company_name || ''}</div>
           <div class="detail-sector">${stock.industry || stock.sector || ''}</div>
+          ${stock.fund_source && stock.fund_source !== 'none' ? `<div style="font-size:9px;color:var(--text3);margin-top:3px">數據來源: ${stock.fund_source}</div>` : ''}
           <div class="detail-price" style="margin-top:8px">$${stock.price}</div>
         </div>
         <div>
@@ -1384,7 +1393,7 @@ function openDetail(symbol) {
       ${stock.rsi !== undefined ? `<div class="breakdown-item"><div class="bi-left"><div class="bi-icon ${stock.rsi > 70 ? 'fail' : stock.rsi < 30 ? 'pass' : 'pass'}">📊</div><div><div class="bi-label">RSI</div></div></div><div class="bi-points">${stock.rsi}</div></div>` : ''}
       ${stock.atr_pct !== undefined ? `<div class="breakdown-item"><div class="bi-left"><div class="bi-icon pass">📈</div><div><div class="bi-label">ATR%（日均波動）</div></div></div><div class="bi-points">${stock.atr_pct}%</div></div>` : ''}
       ${stock.vol_mult !== undefined ? `<div class="breakdown-item"><div class="bi-left"><div class="bi-icon ${stock.vol_mult > 1.5 ? 'pass' : 'fail'}">📦</div><div><div class="bi-label">成交量倍數</div></div></div><div class="bi-points">${stock.vol_mult}x</div></div>` : ''}
-      ${stock.beta !== undefined ? `<div class="breakdown-item"><div class="bi-left"><div class="bi-icon pass">⚡</div><div><div class="bi-label">Beta</div></div></div><div class="bi-points">${stock.beta?.toFixed(2)}</div></div>` : ''}
+      <div class="breakdown-item"><div class="bi-left"><div class="bi-icon pass">⚡</div><div><div class="bi-label">Beta（市場敏感度）</div></div></div><div class="bi-points">${(stock.beta != null && stock.beta !== undefined) ? Number(stock.beta).toFixed(2) : '--'}</div></div>
     </div>
   `;
 
