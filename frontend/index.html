@@ -1465,23 +1465,24 @@ async function searchStock() {
     </div>`;
 
   try {
-    const res  = await fetch(\`\${API_BASE}/api/stock/\${symbol}\`);
-    const json = await res.json();
+        // 🚀 語法校準：把那堆亂七八糟的反斜線和多餘符號全部閹割，換成標準的反單引號字串模板！
+        const res = await fetch(`${API_BASE}/api/stock/${symbol}`);
+        const json = await res.json();
 
-    if (json.success && json.data) {
-      const s = json.data;
-      window._searchResult = s;
+        if (json.success && json.data) {
+            const s = json.data;
+            window._searchResult = s;
 
-      // price=0 means yfinance failed on Render
-      if (!s.price || s.price === 0) {
-        content.innerHTML = `
-          <div class="not-stage2-banner">
-            ⚠ 無法取得 ${symbol} 的即時價格<br>
-            可能原因：非美股代號、已下市、或伺服器暫時受限。請稍後重試。
-          </div>`;
-        showToast(`${symbol} 技術數據暫時不可用`, 'error');
-        return;
-      }
+            // price=0 means yfinance failed
+            if (!s.price || s.price === 0) {
+                content.innerHTML = `
+                    <div class="not-stage2-banner">
+                        ⚠️ 無法取得 ${symbol} 的即時價格與技術數據！<br>
+                        可能原因：非美股代號、已下市、或 API 額度耗盡。
+                    </div>`;
+                showToast(`${symbol} 技術數據暫時失效`, "warning");
+                return;
+            }
 
       const notStage2Banner = s.not_stage2
         ? `<div class="not-stage2-banner" style="margin-bottom:10px">
