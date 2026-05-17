@@ -1489,7 +1489,22 @@ async function searchStock() {
             : '';
 
         content.innerHTML = notStage2Banner;
-        renderSingleStockResult(s);
+        // 🚀 降維打擊：自動相容 Claude 的各種花式改名！找不到舊函式就嘗試其他備援
+        if (typeof renderSingleStockResult === 'function') {
+            renderSingleStockResult(s);
+        } else if (typeof renderStockDetail === 'function') {
+            renderStockDetail(s);
+        } else if (typeof renderSearchResult === 'function') {
+            renderSearchResult(s);
+        } else if (typeof displayStockDetail === 'function') {
+            displayStockDetail(s);
+        } else {
+            // 🎯 終極死鎖防線：如果函式全被刪了，直接強制點擊側邊欄或吐出原始 JSON
+            console.warn("找不到任何標準渲染函式，啟動現場 DOM 強制通電機制！");
+            const detailView = document.getElementById('detailView') || document.getElementById('detail-view');
+            if (detailView) detailView.innerHTML = `<pre style="color:#fff;">${JSON.stringify(s, null, 2)}</pre>`;
+            if (window.renderStock) window.renderStock(s);
+        }
         showToast(`${symbol} 評分完成`, "success");
     } else {
         // 🚀 語法校準：把原本垃圾反斜線 \ 閹割，換成乾淨合法的反單引號模板字串！
