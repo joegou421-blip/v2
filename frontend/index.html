@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="選股儀表板">
 <meta name="theme-color" content="#0a0a0f">
@@ -232,6 +232,8 @@ html, body {
   overflow: hidden;
 }
 
+.market-card hover { border-color: var(--accent); }
+
 .market-card::before {
   content: '';
   position: absolute;
@@ -268,6 +270,12 @@ html, body {
 .mc-change.down { color: var(--red); }
 
 .mc-stats {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 4px;
+}
+
+.mc-stats-grid {
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 4px;
@@ -898,7 +906,6 @@ body.regime-no_data  .regime-tint-bar { background: #444; }
 <body>
 <div class="app">
 
-  <!-- HEADER -->
   <header class="header">
     <div class="header-title">美股<span>選股</span>系統</div>
     <div class="header-right">
@@ -911,7 +918,6 @@ body.regime-no_data  .regime-tint-bar { background: #444; }
   </header>
   <div class="regime-tint-bar" id="regimeTintBar"></div>
 
-  <!-- PAGE 1: MARKET OVERVIEW -->
   <div class="page active" id="page-market">
     <button class="refresh-btn" id="marketRefreshBtn" onclick="refreshMarket()">
       <svg viewBox="0 0 24 24"><path d="M21 12a9 9 0 11-6.219-8.56"/><polyline points="21 3 21 9 15 9"/></svg>
@@ -927,7 +933,6 @@ body.regime-no_data  .regime-tint-bar { background: #444; }
     </div>
   </div>
 
-  <!-- PAGE 2: SCANNER -->
   <div class="page" id="page-scanner">
     <button class="refresh-btn" id="scanRefreshBtn" onclick="startScan()">
       <svg viewBox="0 0 24 24"><path d="M21 12a9 9 0 11-6.219-8.56"/><polyline points="21 3 21 9 15 9"/></svg>
@@ -957,7 +962,6 @@ body.regime-no_data  .regime-tint-bar { background: #444; }
     </div>
   </div>
 
-  <!-- PAGE 3: SEARCH -->
   <div class="page" id="page-search">
     <div class="search-bar-wrap">
       <div class="search-icon"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg></div>
@@ -976,7 +980,6 @@ body.regime-no_data  .regime-tint-bar { background: #444; }
     </div>
   </div>
 
-  <!-- NAV -->
   <nav class="nav">
     <button class="nav-item active" onclick="switchPage('market', this)">
       <svg viewBox="0 0 24 24"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
@@ -992,10 +995,7 @@ body.regime-no_data  .regime-tint-bar { background: #444; }
     </button>
   </nav>
 
-</div><!-- .app -->
-
-<!-- DETAIL VIEW -->
-<div class="detail-view" id="detailView">
+</div><div class="detail-view" id="detailView">
   <div class="detail-header">
     <button class="back-btn" onclick="closeDetail()">
       <svg viewBox="0 0 24 24"><polyline points="15 18 9 12 15 6"/></svg>
@@ -1006,7 +1006,6 @@ body.regime-no_data  .regime-tint-bar { background: #444; }
   <div class="detail-content" id="detailContent"></div>
 </div>
 
-<!-- TOAST -->
 <div class="toast" id="toast"></div>
 
 <script>
@@ -1067,7 +1066,13 @@ async function refreshMarket() {
 }
 
 function renderMarket(data) {
-  const { indices, vix, regime, signals, spy_ok, updated_at } = data;
+  let { indices, vix, regime, signals, spy_ok, updated_at } = data;
+  
+  // 🚨 修正 VIX 前端裝死 Bug 1：如果 VIX 單日跳漲 >= 5%，前端直接強行覆蓋大盤判定為 Risk-Off！
+  if (vix && (Number(vix.value) >= 20 || Number(vix.change_pct) >= 5)) {
+    regime = 'risk_off';
+  }
+
   // Apply regime tint to body
   document.body.className = document.body.className.replace(/regime-\S+/g, '');
   document.body.classList.add('regime-' + regime);
@@ -1080,7 +1085,6 @@ function renderMarket(data) {
   const r = regimeMap[regime] || regimeMap.neutral;
 
   const symbols = ['SPY', 'QQQ', 'IWM', 'GLD'];
-  const labels = { SPY: 'S&P 500', QQQ: 'NASDAQ', IWM: 'Russell 2K', GLD: '黃金 Gold' };
 
   let cardsHTML = symbols.map(sym => {
     const d = indices[sym];
@@ -1117,27 +1121,25 @@ function renderMarket(data) {
   const vixLevelMap = { calm: '平靜', neutral: '中性', fear: '恐懼', extreme_fear: '極度恐懼' };
   const vixMomentumMap = { spike: '暴漲 ‼️', surge: '飆升 ⚠️', rising: '上升 ↑', falling: '下降 ↓', plunging: '急跌 ↓↓' };
   const vixHTML = vix ? (() => {
-    // 🚨 PANIC CONDITION: value >= 20 OR single-day change >= 5%
+    // 🚨 修正 VIX 前端裝死 Bug 2：VIX 絕對值 >= 20 OR 單日漲幅 >= 5% 觸發最高恐慌
     const isPanic = Number(vix.value) >= 20 || Number(vix.change_pct) >= 5;
     const vixColor = isPanic ? 'var(--red)' : vix.value > 18 ? 'var(--yellow)' : 'var(--green)';
     const vixLabel = isPanic
-      ? `<div class="vix-level extreme_fear" style="font-size:13px;padding:5px 12px">恐慌 / 高波動 🚨</div>`
+      ? `<div class="vix-level extreme_fear" style="font-size:11px;padding:4px 10px;background:var(--red-dim);color:var(--red);border:1px solid var(--red-border)">恐慌 / 高波動 🚨</div>`
       : `<div class="vix-level ${vix.level}">${vixLevelMap[vix.level] || vix.level}</div>`;
-    const panicBorder = isPanic ? 'border:1.5px solid var(--red);background:var(--red-dim)' : '';
+    const panicBorder = isPanic ? 'border:1.5px solid var(--red);background:linear-gradient(135deg, #ff446605, var(--bg3))' : '';
     return `<div class="vix-card" style="${panicBorder}">
       <div class="vix-left">
         <div class="vix-label">CBOE 恐懼指數 VIX</div>
         <div class="vix-value" style="color:${vixColor}">${vix.value}</div>
         <div class="vix-change ${vix.change >= 0 ? 'up' : 'down'}" style="color:${vix.change >= 0 ? 'var(--red)' : 'var(--green)'}">
-          ${vix.change >= 0 ? '+' : ''}${vix.change} (${vix.change_pct > 0 ? '+' : ''}${vix.change_pct}%)
+          ${vix.change >= 0 ? '+' : ''}${vix.change} (${vix.change_pct > 0 ? '+' : ''}${vix.change_pct.toFixed(2)}%)
         </div>
         ${vix.momentum ? `<div class="vix-momentum ${vix.momentum}">${vixMomentumMap[vix.momentum] || vix.momentum}</div>` : ''}
       </div>
       ${vixLabel}
     </div>`;
   })() : '';
-
-  const updatedAt = data.updated_at ? new Date(data.updated_at).toLocaleTimeString('zh-TW') : '';
 
   document.getElementById('marketContent').innerHTML = `
     <div class="regime-banner ${regime}">
@@ -1183,7 +1185,8 @@ async function startScan() {
   try {
     const cacheRes = await fetch(`${API_BASE}/api/scan/results`);
     const cacheJson = await cacheRes.json();
-    if (cacheJson.success) {
+    // 🚨 修正冷啟動與交接棒 Bug：只有當狀態是成功且裡面真正有資料時，才直接載入快取
+    if (cacheJson.success && cacheJson.data && cacheJson.data.passed > 0) {
       renderScanResults(cacheJson.data);
       showToast('已載入緩存結果（24小時內有效）', 'success');
       return;
@@ -1225,7 +1228,6 @@ function startPollProgress() {
       document.getElementById('progressCurrent').textContent = data.current || '';
       document.getElementById('progressLabel').textContent = `掃描中 ${data.done}/${data.total}`;
 
-      // Detect completion: either is_scanning=false+progress=100, OR "完成" in current text
       const isDone = (!data.is_scanning && data.progress >= 100) ||
                      (data.current && data.current.includes('完成'));
       if (isDone) {
@@ -1244,10 +1246,10 @@ function startPollProgress() {
         let fetched = false;
         for (let attempt = 0; attempt < 3 && !fetched; attempt++) {
           try {
-            await new Promise(r => setTimeout(r, attempt * 1000)); // wait before retry
+            await new Promise(r => setTimeout(r, attempt * 1000)); 
             const rRes = await fetch(`${API_BASE}/api/scan/results`);
             const rJson = await rRes.json();
-            if (rJson.success && rJson.data && rJson.data.passed > 0) {
+            if (rJson.success && rJson.data) {
               renderScanResults(rJson.data);
               showToast(`掃描完成！找到 ${rJson.data.passed} 支股票`, 'success');
               fetched = true;
@@ -1268,37 +1270,62 @@ function startPollProgress() {
 }
 
 function renderScanResults(data) {
+  // 🚨 修正交接棒 Bug 3：如果 data 狀態代表根本沒掃描或陣列為空，優化顯示為冷啟動引導咖啡提示
+  if (data.status === "not_scanned" || !data.results || data.results.length === 0) {
+    document.getElementById('scannerContent').innerHTML = `
+      <div class="empty-state">
+        <div class="empty-icon">☕</div>
+        <div class="empty-text">今日尚未執行大盤選股掃描</div>
+        <div class="empty-sub">Render 伺服器剛才休眠了。請點擊上方按鈕，<br>開始觸發 15 分量化評分系統。</div>
+      </div>`;
+    return;
+  }
+
   currentResults = data.results || [];
   const scannedAt = data.scanned_at ? new Date(data.scanned_at).toLocaleString('zh-TW') : '--';
 
   let html = `
     <div class="scan-info">
-      <span class="scan-info-label">上次掃描</span>
+      <span class="scan-info-label">初篩股池 / 上次掃描時間</span>
       <span class="scan-info-value">${scannedAt}</span>
     </div>
     <div class="scan-info" style="margin-top:-6px">
-      <span class="scan-info-label">掃描結果</span>
-      <span class="scan-info-value">共 ${data.passed} 支通過篩選</span>
+      <span class="scan-info-label">篩選結果</span>
+      <span class="scan-info-value">共 ${data.passed} 支通過高動能過濾</span>
     </div>
   `;
 
   if (currentResults.length === 0) {
     html += `<div class="empty-state"><div class="empty-icon">😐</div><div class="empty-text">本次掃描無符合條件股票</div></div>`;
   } else {
-    html += currentResults.map(s => renderStockCard(s)).join('');
+    html += currentResults.map((s, idx) => renderStockCard({ ...s, rank: s.rank || (idx + 1) })).join('');
   }
 
   document.getElementById('scannerContent').innerHTML = html;
 }
 
 function renderStockCard(s) {
-  const mktCapStr = s.market_cap ? (s.market_cap >= 1e12 ? `${(s.market_cap/1e12).toFixed(1)}T` : `${(s.market_cap/1e9).toFixed(1)}B`) : '--';
   const chaseHTML = s.chase_risk ? `<div class="chase-badge">⚠ 追高風險</div>` : '';
+  
+  // 🚨 修正 #undefined 視覺漏洞：若是智慧搜尋無名次，優化顯示為「智慧搜尋個股」標籤
+  const rankDisplay = (s.rank != null && s.rank !== undefined) ? "#" + s.rank : "智慧搜尋個股";
+  
+  // 🚨 修正由虧轉盈負數顯示 Bug：若後端判定為由虧轉盈，前端給予綠色視覺加權
+  let epsYoyHTML = '';
+  if (s.eps_yoy === '由虧轉盈' || (s.breakdown && s.breakdown.turned_profitable && s.breakdown.turned_profitable.pass)) {
+    epsYoyHTML = `<span style="color:var(--green)">↑ 由虧轉盈</span>`;
+  } else if (s.eps_yoy == null) {
+    epsYoyHTML = `<span style="color:var(--text3)">--</span>`;
+  } else {
+    const isPos = s.eps_yoy > 0;
+    epsYoyHTML = `<span style="color:${isPos ? 'var(--green)' : 'var(--red)'}">${isPos ? '+' : ''}${Number(s.eps_yoy).toFixed(1)}%</span>`;
+  }
+
   return `
     <div class="stock-card signal-${s.signal}" onclick="openDetail('${s.symbol}')">
       <div class="sc-top">
         <div class="sc-left">
-          <div class="sc-rank">${(s.rank != null && s.rank !== undefined) ? "#"+s.rank : ""}</div>
+          <div class="sc-rank">${rankDisplay}</div>
           <div class="sc-symbol">${s.symbol}</div>
           <div class="sc-name">${s.company_name || ''}</div>
           <div class="sc-industry">${s.industry || s.sector || ''}</div>
@@ -1311,15 +1338,15 @@ function renderStockCard(s) {
       <div class="sc-stats">
         <div class="sc-stat-item">
           <div class="sc-stat-label">EPS增長</div>
-          <div class="sc-stat-value" style="color:${s.eps_yoy==null?(s.breakdown?.turned_profitable?.pass?'var(--green)':'var(--text3)'):s.eps_yoy>0?'var(--green)':'var(--red)'}">${s.eps_yoy==null?(s.breakdown?.turned_profitable?.pass?'↑轉盈':'--'):(s.eps_yoy>0?'+':'')+s.eps_yoy.toFixed(1)+'%'}</div>
+          <div class="sc-stat-value">${epsYoyHTML}</div>
         </div>
         <div class="sc-stat-item">
           <div class="sc-stat-label">收入增長</div>
-          <div class="sc-stat-value" style="color:${s.rev_yoy==null?'var(--text3)':s.rev_yoy>0?'var(--green)':'var(--red)'}">${s.rev_yoy==null?'--':(s.rev_yoy>0?'+':'')+s.rev_yoy.toFixed(1)+'%'}</div>
+          <div class="sc-stat-value" style="color:${s.rev_yoy==null?'var(--text3)':s.rev_yoy>0?'var(--green)':'var(--red)'}">${s.rev_yoy==null?'--':(s.rev_yoy>0?'+':'')+Number(s.rev_yoy).toFixed(1)+'%'}</div>
         </div>
         <div class="sc-stat-item">
           <div class="sc-stat-label">RS評級</div>
-          <div class="sc-stat-value" style="color:${s.rs_rating >= 80 ? 'var(--green)' : s.rs_rating >= 60 ? 'var(--yellow)' : 'var(--text2)'}">${s.rs_rating != null ? s.rs_rating : '--'}</div>
+          <div class="sc-stat-value" style="color:${s.rs_rating >= 80 ? 'var(--green)' : s.rs_rating >= 60 ? 'var(--yellow)' : 'var(--text2)'}">${s.rs_rating != null ? Number(s.rs_rating).toFixed(0) : '--'}</div>
         </div>
         <div class="sc-stat-item">
           <div class="sc-stat-label">Beta</div>
@@ -1329,11 +1356,11 @@ function renderStockCard(s) {
       <div class="sc-trade">
         <div class="sc-trade-item">
           <div class="sc-trade-label">止損</div>
-          <div class="sc-trade-value stop">${s.stop_loss || '--'}</div>
+          <div class="sc-trade-value stop">${s.stop_loss ? '$'+Number(s.stop_loss).toFixed(2) : '--'}</div>
         </div>
         <div class="sc-trade-item">
           <div class="sc-trade-label">目標</div>
-          <div class="sc-trade-value target">${s.target || '--'}</div>
+          <div class="sc-trade-value target">${s.target ? '$'+Number(s.target).toFixed(2) : '--'}</div>
         </div>
         <div class="sc-trade-item">
           <div class="sc-trade-label">R:R</div>
@@ -1348,7 +1375,6 @@ function renderStockCard(s) {
 function openDetail(symbol) {
   let stock = currentResults.find(s => s.symbol === symbol);
 
-  // Try search result
   if (!stock && window._searchResult && window._searchResult.symbol === symbol) {
     stock = window._searchResult;
   }
@@ -1358,24 +1384,32 @@ function openDetail(symbol) {
   document.getElementById('detailSymbol').textContent = symbol;
   document.getElementById('detailSignalBadge').innerHTML = `<div class="signal-badge signal-${stock.signal}">${stock.signal_label}</div>`;
 
-  const mktCapStr = stock.market_cap ? (stock.market_cap >= 1e12 ? `${(stock.market_cap/1e12).toFixed(1)}T` : `${(stock.market_cap/1e9).toFixed(1)}B`) : '--';
   const chaseHTML = stock.chase_risk ? `<div class="chase-badge" style="margin-top:8px">⚠ 追高風險：當前價格距止損位超過 1.5倍 ATR，建議等待回調</div>` : '';
   const notStage2 = stock.not_stage2 ? `<div class="not-stage2-banner">⚠ 此股票目前不在 Stage 2，不符合趨勢跟蹤條件</div>` : '';
 
-  const breakdownHTML = Object.entries(stock.breakdown || {}).map(([key, item]) => {
-    const valueStr = item.value !== undefined ? `實際值：${typeof item.value === 'number' ? item.value.toFixed(1) : item.value}` : '';
+  // 🚨 修正 JS 渲染中斷 Bug：對 breakdown 清單進行完善的容錯遍歷處理
+  const breakdownHTML = stock.breakdown ? Object.entries(stock.breakdown).map(([key, item]) => {
+    if (!item) return '';
+    let valDisplay = '';
+    if (item.value !== undefined && item.value !== null) {
+      if (typeof item.value === 'number') {
+        valDisplay = `實際值：${item.value.toFixed(1)}`;
+      } else {
+        valDisplay = `實際值：${item.value}`;
+      }
+    }
     return `
       <div class="breakdown-item">
         <div class="bi-left">
           <div class="bi-icon ${item.pass ? 'pass' : 'fail'}">${item.pass ? '✓' : '✗'}</div>
           <div>
-            <div class="bi-label">${item.label}</div>
-            ${valueStr ? `<div class="bi-value">${valueStr}</div>` : ''}
+            <div class="bi-label">${item.label || key}</div>
+            ${valDisplay ? `<div class="bi-value">${valDisplay}</div>` : ''}
           </div>
         </div>
-        <div class="bi-points">${item.pass ? '+' : ''}${item.pass ? item.points : 0}/${item.points}</div>
+        <div class="bi-points">${item.pass ? '+' : ''}${item.pass ? item.points : 0}/${item.points || 0}</div>
       </div>`;
-  }).join('');
+  }).join('') : '<div style="padding:20px;text-align:center;color:var(--text3)">評分數據不足</div>';
 
   document.getElementById('detailContent').innerHTML = `
     ${notStage2}
@@ -1385,7 +1419,7 @@ function openDetail(symbol) {
           <div class="detail-company">${stock.company_name || ''}</div>
           <div class="detail-sector">${stock.industry || stock.sector || ''}</div>
           ${stock.fund_source && stock.fund_source !== 'none' ? `<div style="font-size:9px;color:var(--text3);margin-top:3px">數據來源: ${stock.fund_source}</div>` : ''}
-          <div class="detail-price" style="margin-top:8px">$${stock.price}</div>
+          <div class="detail-price" style="margin-top:8px">$${Number(stock.price).toFixed(2)}</div>
         </div>
         <div>
           <div class="detail-score-big" style="color:${scoreColor(stock.score)}">${stock.score}</div>
@@ -1397,11 +1431,11 @@ function openDetail(symbol) {
       <div class="detail-trade-grid">
         <div class="detail-trade-item">
           <div class="detail-trade-label">止損價</div>
-          <div class="detail-trade-value stop">$${stock.stop_loss}</div>
+          <div class="detail-trade-value stop">$${Number(stock.stop_loss).toFixed(2)}</div>
         </div>
         <div class="detail-trade-item">
           <div class="detail-trade-label">目標價</div>
-          <div class="detail-trade-value target">$${stock.target}</div>
+          <div class="detail-trade-value target">$${Number(stock.target).toFixed(2)}</div>
         </div>
         <div class="detail-trade-item">
           <div class="detail-trade-label">R:R 比</div>
@@ -1412,14 +1446,14 @@ function openDetail(symbol) {
     </div>
 
     <div class="section-title">評分細目</div>
-    <div class="breakdown-list">${breakdownHTML || '<div style="padding:20px;text-align:center;color:var(--text3)">評分數據不足</div>'}</div>
+    <div class="breakdown-list">${breakdownHTML}</div>
 
     <div class="section-title" style="margin-top:20px">技術指標</div>
     <div class="breakdown-list">
-      ${stock.rsi !== undefined ? `<div class="breakdown-item"><div class="bi-left"><div class="bi-icon ${stock.rsi > 70 ? 'fail' : stock.rsi < 30 ? 'pass' : 'pass'}">📊</div><div><div class="bi-label">RSI</div></div></div><div class="bi-points">${stock.rsi}</div></div>` : ''}
-      ${stock.atr_pct !== undefined ? `<div class="breakdown-item"><div class="bi-left"><div class="bi-icon pass">📈</div><div><div class="bi-label">ATR%（日均波動）</div></div></div><div class="bi-points">${stock.atr_pct}%</div></div>` : ''}
-      ${stock.vol_mult !== undefined ? `<div class="breakdown-item"><div class="bi-left"><div class="bi-icon ${stock.vol_mult > 1.5 ? 'pass' : 'fail'}">📦</div><div><div class="bi-label">成交量倍數</div></div></div><div class="bi-points">${stock.vol_mult}x</div></div>` : ''}
-      <div class="breakdown-item"><div class="bi-left"><div class="bi-icon pass">⚡</div><div><div class="bi-label">Beta（市場敏感度）</div></div></div><div class="bi-points">${(stock.beta != null && stock.beta !== undefined) ? Number(stock.beta).toFixed(2) : '--'}</div></div>
+      ${stock.rsi !== undefined ? `<div class="breakdown-item"><div class="bi-left"><div class="bi-icon pass">📊</div><div><div class="bi-label">RSI</div></div></div><div class="bi-points">${Number(stock.rsi).toFixed(1)}</div></div>` : ''}
+      ${stock.atr_pct !== undefined ? `<div class="breakdown-item"><div class="bi-left"><div class="bi-icon pass">📈</div><div><div class="bi-label">ATR%（日均波動）</div></div></div><div class="bi-points">${Number(stock.atr_pct).toFixed(2)}%</div></div>` : ''}
+      ${stock.vol_mult !== undefined ? `<div class="breakdown-item"><div class="bi-left"><div class="bi-icon pass">📦</div><div><div class="bi-label">成交量倍數</div></div></div><div class="bi-points">${Number(stock.vol_mult).toFixed(2)}x</div></div>` : ''}
+      <div class="breakdown-item"><div class="bi-left"><div class="bi-icon pass">⚡</div><div><div class="bi-label">Beta（市場敏感度）</div></div></div><div class="bi-points">${(stock.beta != null) ? Number(stock.beta).toFixed(2) : '--'}</div></div>
     </div>
   `;
 
@@ -1444,36 +1478,33 @@ async function searchStock() {
   const symbol  = input.value.trim().toUpperCase();
   if (!symbol) { showToast('請輸入股票代號'); return; }
 
-  // Validate basic format
   if (!/^[A-Z.\-]{1,10}$/.test(symbol)) {
     showToast('代號格式錯誤，請輸入英文字母'); return;
   }
 
   const content = document.getElementById('searchContent');
 
-  // Loading state
   btn.disabled  = true;
   btn.textContent = '計算中...';
   content.innerHTML = `
     <div class="loading-spinner"><div class="spinner"></div></div>
     <div style="text-align:center;font-size:12px;color:var(--text3);margin-top:8px">
-      正在呼叫 yfinance + FMP 即時數據，約需 10-20 秒...
+      正在呼叫三層數據源及快取分析，約需 5-10 秒...
     </div>`;
 
   try {
-    const res  = await fetch(\`\${API_BASE}/api/stock/\${symbol}\`);
+    const res  = await fetch(`${API_BASE}/api/stock/${symbol}`);
     const json = await res.json();
 
     if (json.success && json.data) {
       const s = json.data;
       window._searchResult = s;
 
-      // price=0 means yfinance failed on Render
       if (!s.price || s.price === 0) {
         content.innerHTML = `
           <div class="not-stage2-banner">
             ⚠ 無法取得 ${symbol} 的即時價格<br>
-            可能原因：非美股代號、已下市、或伺服器暫時受限。請稍後重試。
+            可能原因：非美股代號、已下市、或伺服器被頻率限制。請稍後重試。
           </div>`;
         showToast(`${symbol} 技術數據暫時不可用`, 'error');
         return;
@@ -1481,7 +1512,7 @@ async function searchStock() {
 
       const notStage2Banner = s.not_stage2
         ? `<div class="not-stage2-banner" style="margin-bottom:10px">
-            ⚠ ${symbol} 目前不在 Stage 2 上升趨勢，止損/目標僅供參考
+            ⚠ ${symbol} 目前不在 Stage 2 上升趨勢，風控模型建議觀望
           </div>`
         : '';
 
@@ -1489,20 +1520,20 @@ async function searchStock() {
       content.querySelector('.stock-card').onclick = () => openDetail(s.symbol);
       showToast(`${symbol} 評分完成`, 'success');
     } else {
-      content.innerHTML = \`
+      content.innerHTML = `
         <div class="empty-state">
           <div class="empty-icon">❌</div>
-          <div class="empty-text">找不到此股票代號：\${symbol}</div>
-          <div class="empty-sub">\${json.error || '請確認代號是否正確，例如 AAPL、TSLA、NVDA'}</div>
-        </div>\`;
+          <div class="empty-text">找不到此股票代號：${symbol}</div>
+          <div class="empty-sub">${json.error || '請確認代號是否正確，例如 AAPL、TSLA、NVDA'}</div>
+        </div>`;
     }
   } catch (e) {
-    content.innerHTML = \`
+    content.innerHTML = `
       <div class="empty-state">
         <div class="empty-icon">🌐</div>
         <div class="empty-text">連線失敗</div>
         <div class="empty-sub">請稍後再試</div>
-      </div>\`;
+      </div>`;
   } finally {
     btn.disabled    = false;
     btn.textContent = '查詢評分';
@@ -1525,8 +1556,13 @@ if ('serviceWorker' in navigator) {
     const json = await res.json();
     if (json.success) {
       renderScanResults(json.data);
+    } else {
+      // 🚨 修正 404/冷啟動：如果冷啟動回傳 200 但沒成功數據，同樣呼叫提示引導
+      renderScanResults({ status: "not_scanned", results: [] });
     }
-  } catch(e) {}
+  } catch(e) {
+    renderScanResults({ status: "not_scanned", results: [] });
+  }
 
   // Check if scan is in progress
   try {
