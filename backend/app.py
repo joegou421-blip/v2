@@ -1,11 +1,22 @@
 from flask import Flask, jsonify, send_from_directory
 from flask_cors import CORS
-import threading, os
+import threading, os, json
+import numpy as np
 from database import init_db, get_scan_results, get_meta, set_meta
 from market import get_market_overview
 from scanner import run_full_scan, score_single_stock
 
+class SafeJSONEncoder(json.JSONEncoder):
+    """Convert numpy types to native Python so Flask jsonify never crashes"""
+    def default(self, obj):
+        if isinstance(obj, np.integer):  return int(obj)
+        if isinstance(obj, np.floating): return float(obj)
+        if isinstance(obj, np.bool_):    return bool(obj)
+        if isinstance(obj, np.ndarray):  return obj.tolist()
+        return super().default(obj)
+
 app = Flask(__name__, static_folder='../frontend', static_url_path='')
+app.json_encoder = SafeJSONEncoder  # Handle numpy types
 CORS(app)
 
 PROGRESS_FILE = 'scan_progress.json'

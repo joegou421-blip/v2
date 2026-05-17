@@ -148,16 +148,16 @@ def _from_yfinance(symbol, hist_close=None, spy_close=None):
                 ni = ni_row
                 if ni[4] != 0: eps_yoy = round((ni[0]-ni[4])/abs(ni[4])*100, 1)
                 gr = [(ni[i]-ni[i+1])/abs(ni[i+1])*100 for i in range(min(4,len(ni)-1)) if ni[i+1]!=0]
-                accel2  = len(gr)>=2 and gr[0]>gr[1]
-                accel3  = len(gr)>=3 and gr[0]>gr[1]>gr[2]
-                turned  = len(ni)>=2 and ni[0]>0 and ni[1]<=0
+                accel2  = bool(len(gr)>=2 and gr[0]>gr[1])
+                accel3  = bool(len(gr)>=3 and gr[0]>gr[1]>gr[2])
+                turned  = bool(len(ni)>=2 and ni[0]>0 and ni[1]<=0)
 
             if rev_row is not None and len(rev_row) >= 5:
                 rev = rev_row
                 if rev[4] > 0: rev_yoy = round((rev[0]-rev[4])/rev[4]*100, 1)
 
             if gp_row is not None and rev_row is not None and len(gp_row) >= 2:
-                gm_exp = (gp_row[0]/rev_row[0] if rev_row[0] else 0) > (gp_row[1]/rev_row[1] if rev_row[1] else 0)
+                gm_exp = bool((gp_row[0]/rev_row[0] if rev_row[0] else 0) > (gp_row[1]/rev_row[1] if rev_row[1] else 0))
 
             print(f"[L1] {symbol} income OK: eps={eps_yoy}, rev={rev_yoy}")
         else:
@@ -215,17 +215,16 @@ def _from_sec_edgar(symbol):
             ni = [q['val'] for q in ni_q]
             if ni[4] != 0: eps_yoy = round((ni[0]-ni[4])/abs(ni[4])*100, 1)
             gr = [(ni[i]-ni[i+1])/abs(ni[i+1])*100 for i in range(min(4,len(ni)-1)) if ni[i+1]!=0]
-            accel2 = len(gr)>=2 and gr[0]>gr[1]
-            accel3 = len(gr)>=3 and gr[0]>gr[1]>gr[2]
-            turned = len(ni)>=2 and ni[0]>0 and ni[1]<=0
+            accel2 = bool(len(gr)>=2 and gr[0]>gr[1])
+            accel3 = bool(len(gr)>=3 and gr[0]>gr[1]>gr[2])
+            turned = bool(len(ni)>=2 and ni[0]>0 and ni[1]<=0)
 
         if len(rev_q) >= 5:
             rev = [q['val'] for q in rev_q]
             if rev[4] > 0: rev_yoy = round((rev[0]-rev[4])/rev[4]*100, 1)
 
         if gp_q and rev_q and len(gp_q)>=2 and len(rev_q)>=2:
-            gm_exp = (gp_q[0]['val']/rev_q[0]['val'] if rev_q[0]['val'] else 0) > \
-                     (gp_q[1]['val']/rev_q[1]['val'] if rev_q[1]['val'] else 0)
+            gm_exp = bool((gp_q[0]['val']/rev_q[0]['val'] if rev_q[0]['val'] else 0) > (gp_q[1]['val']/rev_q[1]['val'] if rev_q[1]['val'] else 0))
 
         result.update({'eps_yoy':eps_yoy,'rev_yoy':rev_yoy,'eps_accel_2q':accel2,
                        'eps_accel_3q':accel3,'gm_expanding':gm_exp,'turned_profitable':turned,

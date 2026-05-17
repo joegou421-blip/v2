@@ -156,26 +156,34 @@ def _get_full_technicals(symbol, spy_close):
     return _technicals(symbol, spy_close, require_stage2=False)
 
 # ── Scoring ───────────────────────────────────────────────────────────────────
+def _to_native(v):
+    """Convert numpy scalars to Python native types for JSON safety"""
+    import numpy as np
+    if isinstance(v, np.bool_):    return bool(v)
+    if isinstance(v, np.integer):  return int(v)
+    if isinstance(v, np.floating): return float(v)
+    return v
+
 def score_stock(tech, fund):
     checks = [
-        ('eps_yoy',           (fund.get('eps_yoy') or 0)>20,        2, 'EPS年增長 > 20%',   fund.get('eps_yoy')),
-        ('eps_accel_2q',      fund.get('eps_accel_2q',False),        2, 'EPS連續2季加速',     None),
-        ('eps_accel_3q',      fund.get('eps_accel_3q',False),        1, 'EPS連續3季加速',     None),
-        ('rev_growth',        (fund.get('rev_yoy') or 0)>15,         1, '收入增長 > 15%',     fund.get('rev_yoy')),
-        ('eps_beat',          fund.get('eps_beat',False),             2, 'EPS超越分析師預期',  None),
-        ('rev_beat',          fund.get('rev_beat',False),             1, '收入超越分析師預期', None),
-        ('gm_expanding',      fund.get('gm_expanding',False),         1, '毛利率擴張',         None),
-        ('turned_profitable', fund.get('turned_profitable',False),    1, '由虧轉盈',           None),
-        ('rs_rating',         (tech.get('rs_rating') or 0)>70,       2, 'RS評級 > 70',        tech.get('rs_rating')),
-        ('stage2',            tech.get('stage2',False),               2, 'Stage 2 確認',       None),
+        ('eps_yoy',           bool((fund.get('eps_yoy') or 0)>20),        2, 'EPS年增長 > 20%',   fund.get('eps_yoy')),
+        ('eps_accel_2q',      bool(fund.get('eps_accel_2q',False)),        2, 'EPS連續2季加速',     None),
+        ('eps_accel_3q',      bool(fund.get('eps_accel_3q',False)),        1, 'EPS連續3季加速',     None),
+        ('rev_growth',        bool((fund.get('rev_yoy') or 0)>15),         1, '收入增長 > 15%',     fund.get('rev_yoy')),
+        ('eps_beat',          bool(fund.get('eps_beat',False)),             2, 'EPS超越分析師預期',  None),
+        ('rev_beat',          bool(fund.get('rev_beat',False)),             1, '收入超越分析師預期', None),
+        ('gm_expanding',      bool(fund.get('gm_expanding',False)),         1, '毛利率擴張',         None),
+        ('turned_profitable', bool(fund.get('turned_profitable',False)),    1, '由虧轉盈',           None),
+        ('rs_rating',         bool((tech.get('rs_rating') or 0)>70),       2, 'RS評級 > 70',        tech.get('rs_rating')),
+        ('stage2',            bool(tech.get('stage2',False)),               2, 'Stage 2 確認',       None),
     ]
     score = 0; breakdown = {}
     for key, passed, pts, label, value in checks:
         if passed: score += pts
-        entry = {'pass': passed, 'points': pts, 'label': label}
+        entry = {'pass': bool(passed), 'points': int(pts), 'label': label}
         if value is not None:
             try: entry['value'] = round(float(value),1)
-            except: entry['value'] = value
+            except: entry['value'] = _to_native(value)
         breakdown[key] = entry
 
     if   score>=12: signal,sl='strong_buy',     '強烈買入'
