@@ -4,6 +4,7 @@ from datetime import datetime, timedelta
 # Use /tmp for Render free tier (survives between requests, resets on redeploy)
 # For paid disk, set DB_PATH=/var/data/stocks.db in Render env vars
 DB_PATH = os.environ.get('DB_PATH', '/tmp/stocks.db')
+FUND_CACHE_VERSION = '2'  # Bump this to invalidate all fundamental caches
 
 def get_conn():
     conn = sqlite3.connect(DB_PATH, check_same_thread=False, timeout=30)
@@ -78,12 +79,17 @@ def get_fundamental_cache(symbol):
         # Cache fundamentals for 7 days
         if datetime.now() - datetime.fromisoformat(row['cached_at']) > timedelta(days=7):
             return None
-        return json.loads(row['data'])
+        data = json.loads(row['data'])
+        # Invalidate if cache version mismatch (new formula deployed)
+        if data.get('_cache_version') != FUND_CACHE_VERSION:
+            return None
+        return data
     except:
         return None
 
 def save_fundamental_cache(symbol, data):
     try:
+        data['_cache_version'] = FUND_CACHE_VERSION  # Tag with version
         conn = get_conn()
         conn.execute('INSERT OR REPLACE INTO fundamental_cache (symbol, data, cached_at) VALUES (?,?,?)',
                      (symbol, json.dumps(data), datetime.now().isoformat()))
