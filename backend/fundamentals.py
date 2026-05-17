@@ -15,19 +15,28 @@ HEADERS_SEC = {'User-Agent': 'StockScanner/1.0 contact@example.com Accept-Encodi
 
 def _safe_eps_yoy(current, prior):
     """
-    EPS YoY that handles sign changes correctly.
-    Returns (pct_or_None, is_turnaround_bool)
-    - turnaround (loss→profit): returns (None, True) — don't show misleading negative %
-    - both negative deepening: returns (negative%, False)
-    - both positive or positive→negative: standard formula
+    EPS YoY using absolute value denominator (quantitative finance standard).
+    Formula: (current - prior) / |prior| * 100
+    
+    This correctly handles sign changes:
+    - Loss→Profit: (-0.02→+0.12) = (0.12-(-0.02))/0.02*100 = +700% ✅ (暴發性增長)
+    - Profit→Loss: (0.10→-0.02) = (-0.02-0.10)/0.10*100 = -120% ✅
+    - Both positive: standard formula
+    - Both negative: shows magnitude of loss change
+    
+    Also detects turnaround (prior<0, current>0).
+    Returns: (pct_float_or_None, is_turnaround_bool)
     """
     try:
         if prior is None or current is None: return None, False
         c, p = float(current), float(prior)
-        if p < 0 and c > 0:   return None, True          # Turnaround!
-        if p < 0 and c <= 0:  return round((c-p)/abs(p)*100, 1), False  # Deeper loss
-        if p > 0:             return round((c-p)/p*100, 1), False        # Standard
-        return None, False
+        if p == 0: return None, False
+        
+        is_turnaround = bool(p < 0 and c > 0)
+        pct = round((c - p) / abs(p) * 100, 1)
+        # Cap at ±9999% to avoid display overflow
+        pct = max(-9999, min(9999, pct))
+        return pct, is_turnaround
     except:
         return None, False
 
