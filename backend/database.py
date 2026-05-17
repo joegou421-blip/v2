@@ -1,15 +1,13 @@
 import sqlite3, json, os
 from datetime import datetime, timedelta
 
-# Use /tmp for Render free tier (survives between requests, resets on redeploy)
-# For paid disk, set DB_PATH=/var/data/stocks.db in Render env vars
 DB_PATH = os.environ.get('DB_PATH', '/tmp/stocks.db')
-FUND_CACHE_VERSION = '2'  # Bump this to invalidate all fundamental caches
+FUND_CACHE_VERSION = '2'  # 戳破舊緩存的核彈密碼
 
 def get_conn():
     conn = sqlite3.connect(DB_PATH, check_same_thread=False, timeout=30)
     conn.row_factory = sqlite3.Row
-    conn.execute('PRAGMA journal_mode=WAL')  # Better concurrent access
+    conn.execute('PRAGMA journal_mode=WAL')
     return conn
 
 def init_db():
@@ -76,11 +74,13 @@ def get_fundamental_cache(symbol):
         conn.close()
         if not row:
             return None
-        # Cache fundamentals for 7 days
+            
+        # 7 天快取過期判定
         if datetime.now() - datetime.fromisoformat(row['cached_at']) > timedelta(days=7):
             return None
+            
         data = json.loads(row['data'])
-        # Invalidate if cache version mismatch (new formula deployed)
+        # 🚀 修正版本熔斷：如果快取版本不對，立刻宣判失效，強迫走最新公式重算！
         if data.get('_cache_version') != FUND_CACHE_VERSION:
             return None
         return data
@@ -89,7 +89,7 @@ def get_fundamental_cache(symbol):
 
 def save_fundamental_cache(symbol, data):
     try:
-        data['_cache_version'] = FUND_CACHE_VERSION  # Tag with version
+        data['_cache_version'] = FUND_CACHE_VERSION
         conn = get_conn()
         conn.execute('INSERT OR REPLACE INTO fundamental_cache (symbol, data, cached_at) VALUES (?,?,?)',
                      (symbol, json.dumps(data), datetime.now().isoformat()))

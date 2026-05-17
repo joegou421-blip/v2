@@ -1,14 +1,9 @@
-"""
-scanner.py — 主掃描引擎
-技術面 + RS Rating: yfinance history
-基本面: fundamentals.py 三層備援
-"""
 import yfinance as yf
 import pandas as pd
 import numpy as np
 import json, time
 from datetime import datetime
-from database import save_scan_results, set_meta
+from database import save_scan_results, set_meta, get_meta
 from fundamentals import get_fundamentals, calc_beta_from_prices, calc_rs_rating
 
 SP500 = list(dict.fromkeys([
@@ -58,7 +53,6 @@ def _wp(pf, data):
         with open(pf, 'w') as f: json.dump(data, f)
     except: pass
 
-# ── SPY cache ─────────────────────────────────────────────────────────────────
 _spy = {'hist': None, 'close': None, 'ret6m': 0, 'ts': 0}
 
 def get_spy():
@@ -71,7 +65,6 @@ def get_spy():
             close = hist['Close'].dropna()
             ret6m = (float(close.iloc[-1])/float(close.iloc[-126])-1)*100
             _spy  = {'hist': hist, 'close': close, 'ret6m': ret6m, 'ts': time.time()}
-            print(f"[spy] OK: {len(hist)} bars, ret6m={ret6m:.1f}%")
     except Exception as e:
         print(f"[spy] error: {e}")
     return _spy
@@ -79,7 +72,6 @@ def get_spy():
 def get_spy_ret6m():
     return get_spy()['ret6m']
 
-# ── Technicals core ───────────────────────────────────────────────────────────
 def _technicals(symbol, spy_close, require_stage2=False):
     try:
         hist = yf.Ticker(symbol).history(period='2y', timeout=30)
@@ -116,16 +108,13 @@ def _technicals(symbol, spy_close, require_stage2=False):
         vol_mult = round(float(volume.iloc[-1])/avg_vol, 2) if avg_vol else 1.0
         monthly_dv = price * avg_vol * 21
 
-        # RS Rating — IBD-style weighted multi-period
         rs_rating = None
         if spy_close is not None:
             rs_rating = calc_rs_rating(close, spy_close)
         if rs_rating is None:
-            # Fallback: absolute 12m return percentile
             ret12m = (price/float(close.iloc[-252])-1)*100 if len(close)>=252 else 0
             rs_rating = round(min(99, max(1, 40 + ret12m * 0.8)), 1)
 
-        # Trade levels
         swing_low = float(low.tail(20).min()) if len(low)>=20 else price*0.95
         stop_loss = round(swing_low*0.99, 2)
         risk      = max(price-stop_loss, price*0.02)
@@ -134,16 +123,12 @@ def _technicals(symbol, spy_close, require_stage2=False):
         chase_risk = (risk/atr) > 1.5 if atr else False
 
         return {
-            'price': round(price,2),
-            'sma50': round(sma50,2) if sma50 else None,
-            'sma200': round(sma200,2) if sma200 else None,
-            'stage2': stage2,
+            'price': round(price,2), 'sma50': round(sma50,2) if sma50 else None,
+            'sma200': round(sma200,2) if sma200 else None, 'stage2': stage2,
             'atr': round(atr,2), 'atr_pct': round(atr/price*100,2),
-            'rsi': round(rsi,1), 'vol_mult': vol_mult,
-            'monthly_dv': monthly_dv, 'rs_rating': rs_rating,
-            'stop_loss': stop_loss, 'target': target,
-            'rr': rr, 'chase_risk': chase_risk,
-            '_close': close,  # for beta calc
+            'rsi': round(rsi,1), 'vol_mult': vol_mult, 'monthly_dv': monthly_dv,
+            'rs_rating': rs_rating, 'stop_loss': stop_loss, 'target': target,
+            'rr': rr, 'chase_risk': chase_risk, '_close': close,
         }
     except Exception as e:
         print(f"[tech] {symbol}: {e}")
@@ -155,21 +140,12 @@ def get_technicals(symbol, spy_close):
 def _get_full_technicals(symbol, spy_close):
     return _technicals(symbol, spy_close, require_stage2=False)
 
-# ── Scoring ───────────────────────────────────────────────────────────────────
-def _to_native(v):
-    """Convert numpy scalars to Python native types for JSON safety"""
-    import numpy as np
-    if isinstance(v, np.bool_):    return bool(v)
-    if isinstance(v, np.integer):  return int(v)
-    if isinstance(v, np.floating): return float(v)
-    return v
-
 def score_stock(tech, fund):
-    # If eps_yoy is None but it's a turnaround, treat as positive signal
     eps_yoy_val = fund.get('eps_yoy')
-    is_turnaround = bool(fund.get('turned_profitable', False))
-    # Turnaround stocks: eps_yoy=None means loss→profit, auto-qualify for >20% check
-    eps_yoy_passes = bool(eps_yoy_val is not None and eps_yoy_val > 20) or is_turnaround
+    is_turnaround = bool(fund.get('turned_profitable', False) or eps_yoy_val == "由虧轉盈")
+    
+    # 🚀 修正：若判定為由虧轉盈，自動放行增長率大於 20% 的分數
+    eps_yoy_passes = is_turnaround or (isinstance(eps_yoy_val, (int, float)) and eps_yoy_val > 20)
 
     checks = [
         ('eps_yoy',           eps_yoy_passes,                              2, 'EPS年增長 > 20%',   eps_yoy_val),
@@ -188,8 +164,10 @@ def score_stock(tech, fund):
         if passed: score += pts
         entry = {'pass': bool(passed), 'points': int(pts), 'label': label}
         if value is not None:
-            try: entry['value'] = round(float(value),1)
-            except: entry['value'] = _to_native(value)
+            if isinstance(value, str): entry['value'] = value
+            else:
+                try: entry['value'] = round(float(value),1)
+                except: entry['value'] = _to_native(value)
         breakdown[key] = entry
 
     if   score>=12: signal,sl='strong_buy',     '強烈買入'
@@ -198,7 +176,6 @@ def score_stock(tech, fund):
     else:           signal,sl='watch',           '觀望'
     return score, signal, sl, breakdown
 
-# ── Full scan ─────────────────────────────────────────────────────────────────
 def run_full_scan(progress_file=None):
     global scan_progress
     tickers = SP500; total = len(tickers)
@@ -212,25 +189,32 @@ def run_full_scan(progress_file=None):
     stats = {'not_stage2':0,'low_mktcap':0,'low_beta':0,'low_vol':0,'passed':0}
 
     for i, symbol in enumerate(tickers):
-        state = {'is_scanning':True,'progress':int(i/total*100),
-                 'current':symbol,'total':total,'done':i}
+        state = {'is_scanning':True,'progress':int(i/total*100), 'current':symbol,'total':total,'done':i}
         scan_progress.update(state)
         if i%10==0: _wp(progress_file,state); set_meta('scan_status',state)
 
         try:
             tech = get_technicals(symbol, spy_close)
-            if not tech: stats['not_stage2']+=1; time.sleep(0.3); continue
+            if not tech: stats['not_stage2']+=1; time.sleep(0.1); continue
 
             close_s = tech.pop('_close', None)
-            fund = get_fundamentals(symbol, close_s, spy_close)
-            time.sleep(0.3)
+            
+            # 🚀 修正免費版降級：即使 FMP 因為限流報錯返回 None，有 yfinance 技術面底座也絕不 continue 扔掉！
+            try:
+                fund = get_fundamentals(symbol, close_s, spy_close)
+            except Exception as e:
+                print(f"[scan api tier fallback] {symbol}: {e}")
+                fund = {'_source': 'yfinance_fallback'}
+            
+            time.sleep(0.1)
 
             mkt_cap  = fund.get('market_cap',0) or 0
             beta_val = fund.get('beta')
 
-            if mkt_cap>0 and mkt_cap<2_000_000_000: stats['low_mktcap']+=1; continue
-            if beta_val is not None and 0<beta_val<=0.8: stats['low_beta']+=1; continue
-            if tech['monthly_dv']>0 and tech['monthly_dv']<100_000_000: stats['low_vol']+=1; continue
+            # 🚀 修正初篩條件：在最近調整行情下，Beta 限制放寬至 0.5 容錯，防止股票被風控全部誤殺
+            if mkt_cap>0 and mkt_cap<1_500_000_000: stats['low_mktcap']+=1; continue
+            if beta_val is not None and 0<beta_val<=0.5: stats['low_beta']+=1; continue
+            if tech['monthly_dv']>0 and tech['monthly_dv']<50_000_000: stats['low_vol']+=1; continue
 
             stats['passed']+=1
             score,signal,signal_label,breakdown = score_stock(tech,fund)
@@ -239,72 +223,55 @@ def run_full_scan(progress_file=None):
                 'sector':fund.get('sector',''),'industry':fund.get('industry',''),
                 'score':score,'signal':signal,'signal_label':signal_label,
                 'breakdown':breakdown,'price':tech['price'],
-                'eps_yoy':fund.get('eps_yoy'),'rev_yoy':fund.get('rev_yoy'),
-                'rs_rating':tech['rs_rating'],'beta':beta_val,'market_cap':mkt_cap,
+                'eps_yoy': "由虧轉盈" if fund.get('turned_profitable') else fund.get('eps_yoy'),
+                'rev_yoy':fund.get('rev_yoy'), 'rs_rating':tech['rs_rating'],'beta':beta_val,'market_cap':mkt_cap,
                 'stop_loss':tech['stop_loss'],'target':tech['target'],'rr':tech['rr'],
                 'chase_risk':tech['chase_risk'],'atr_pct':tech['atr_pct'],
-                'rsi':tech['rsi'],'vol_mult':tech['vol_mult'],
-                'fund_source':fund.get('_source','?'),
+                'rsi':tech['rsi'],'vol_mult':tech['vol_mult'], 'fund_source':fund.get('_source','?'),
             })
         except Exception as e:
-            print(f"[scan] {symbol}: {e}"); time.sleep(0.3); continue
+            print(f"[scan severe err] {symbol}: {e}"); time.sleep(0.1); continue
 
     results.sort(key=lambda x:x['score'],reverse=True)
     for i,r in enumerate(results): r['rank']=i+1
     save_scan_results(results,total)
 
-    done={'is_scanning':False,'progress':100,
-          'current':f'完成！找到{len(results)}支','total':total,'done':total,'stats':stats}
+    done={'is_scanning':False,'progress':100, 'current':f'完成！找到{len(results)}支','total':total,'done':total,'stats':stats}
     scan_progress.update(done); _wp(progress_file,done); set_meta('scan_status',done)
-    print(f"[scan] Done: {stats}")
     return results
 
-# ── Single stock search ───────────────────────────────────────────────────────
 def score_single_stock(symbol):
-    empty = {
-        'symbol':symbol,'company_name':symbol,'sector':'','industry':'',
-        'price':0,'score':0,'signal':'watch','signal_label':'觀望',
-        'breakdown':{},'stage2':False,'not_stage2':True,
-        'eps_yoy':None,'rev_yoy':None,'beta':None,'rs_rating':None,
-        'stop_loss':None,'target':None,'rr':None,
-        'chase_risk':False,'atr_pct':None,'rsi':None,'vol_mult':None,
-    }
     spy = get_spy(); spy_close = spy['close']
-
     tech = None
-    try:
-        tech = _get_full_technicals(symbol, spy_close)
-    except Exception as e:
-        print(f"[single] {symbol} tech: {e}")
+    try: tech = _get_full_technicals(symbol, spy_close)
+    except Exception as e: print(f"[single] {symbol} tech: {e}")
 
     close_s = tech.pop('_close', None) if tech else None
 
-    try:
-        fund = get_fundamentals(symbol, close_s, spy_close)
-    except Exception as e:
-        print(f"[single] {symbol} fund: {e}"); fund = {}
-
-    empty.update({
-        'company_name': fund.get('company_name', symbol),
-        'sector':  fund.get('sector',''),
-        'industry':fund.get('industry',''),
-        'eps_yoy': fund.get('eps_yoy'),
-        'rev_yoy': fund.get('rev_yoy'),
-        'beta':    fund.get('beta'),
-    })
+    try: fund = get_fundamentals(symbol, close_s, spy_close)
+    except Exception as e: print(f"[single] {symbol} fund: {e}"); fund = {}
 
     if not tech:
-        print(f"[single] {symbol}: no tech data"); return empty
+        return {
+            'symbol':symbol,'company_name':fund.get('company_name',symbol),'sector':'','industry':'',
+            'price':0,'score':0,'signal':'watch','signal_label':'觀望','breakdown':{},'stage2':False,'not_stage2':True,
+            'eps_yoy':None,'rev_yoy':None,'beta':None,'rs_rating':None,'stop_loss':None,'target':None,'rr':None,
+            'chase_risk':False,'atr_pct':None,'rsi':None,'vol_mult':None,
+        }
 
-    try: score,signal,sl,breakdown = score_stock(tech,fund)
-    except Exception as e:
-        print(f"[single] {symbol} score: {e}"); score,signal,sl,breakdown=0,'watch','觀望',{}
+    score,signal,sl,breakdown = score_stock(tech,fund)
+    
+    # 🚀 終極防禦：在智慧搜尋的最終 JSON 出口，強行將負基數公式污染（-610%）或由虧轉盈攔截清洗！
+    display_eps = fund.get('eps_yoy')
+    if fund.get('turned_profitable') or (isinstance(display_eps, (int, float)) and display_eps < -100):
+        display_eps = "由虧轉盈"
 
     return {
         'symbol':symbol,'company_name':fund.get('company_name',symbol),
         'sector':fund.get('sector',''),'industry':fund.get('industry',''),
         'price':tech['price'],'score':score,'signal':signal,'signal_label':sl,
-        'breakdown':breakdown,'eps_yoy':fund.get('eps_yoy'),
+        'breakdown':breakdown,
+        'eps_yoy':display_eps,  # 👈 這裡被強行洗乾淨了！
         'rev_yoy':fund.get('rev_yoy'),'beta':fund.get('beta'),
         'rs_rating':tech['rs_rating'],'stop_loss':tech['stop_loss'],
         'target':tech['target'],'rr':tech['rr'],'chase_risk':tech['chase_risk'],
