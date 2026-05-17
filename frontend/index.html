@@ -1485,30 +1485,31 @@ async function searchStock() {
             }
 
       const notStage2Banner = s.not_stage2
-        ? `<div class="not-stage2-banner" style="margin-bottom:10px">
-            ⚠ ${symbol} 目前不在 Stage 2 上升趨勢，止損/目標僅供參考
-          </div>`
-        : '';
+            ? `<div class="not-stage2-banner">⚠️ ${symbol} 目前不在 Stage 2 強勢多頭階段，請注意風控！</div>`
+            : '';
 
-      content.innerHTML = notStage2Banner + renderStockCard({ ...s, rank: null });
-      content.querySelector('.stock-card').onclick = () => openDetail(s.symbol);
-      showToast(`${symbol} 評分完成`, 'success');
+        content.innerHTML = notStage2Banner;
+        renderSingleStockResult(s);
+        showToast(`${symbol} 評分完成`, "success");
     } else {
-      content.innerHTML = \`
-        <div class="empty-state">
-          <div class="empty-icon">❌</div>
-          <div class="empty-text">找不到此股票代號：\${symbol}</div>
-          <div class="empty-sub">\${json.error || '請確認代號是否正確，例如 AAPL、TSLA、NVDA'}</div>
-        </div>\`;
+        // 🚀 語法校準：把原本垃圾反斜線 \ 閹割，換成乾淨合法的反單引號模板字串！
+        content.innerHTML = `
+            <div class="empty-state">
+                <div class="empty-icon">❌</div>
+                <div class="empty-text">找不到此個股數據</div>
+                <div class="empty-sub">${json.error || '請檢查代號是否正確'}</div>
+            </div>`;
     }
-  } catch (e) {
-    content.innerHTML = \`
-      <div class="empty-state">
-        <div class="empty-icon">🌐</div>
-        <div class="empty-text">連線失敗</div>
-        <div class="empty-sub">請稍後再試</div>
-      </div>\`;
-  } finally {
+} catch (e) {
+    console.error(e);
+    // 🚀 同步校準：清除 1505 行的反斜線魔障！
+    content.innerHTML = `
+        <div class="empty-state">
+            <div class="empty-icon">🌐</div>
+            <div class="empty-text">連線失敗</div>
+            <div class="empty-sub">請稍後再試，或檢查伺服器狀態</div>
+        </div>`;
+} finally {
     btn.disabled    = false;
     btn.textContent = '查詢評分';
   }
