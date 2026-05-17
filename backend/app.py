@@ -25,6 +25,16 @@ CORS(app)
 PROGRESS_FILE = 'scan_progress.json'
 _scan_thread  = None
 
+# 🚀 終極破鎖熔斷機制：搶在所有人前面，把卡死的 SQLite 殘留直接格式化蒸發！
+try:
+    import os
+    db_file_path = os.environ.get('DB_PATH', '/tmp/stocks.db')
+    if os.path.exists(db_file_path):
+        os.remove(db_file_path)
+        print(f"[REBOOT FORCE DISASTER RECOVERY] 已物理破除並清空卡死的 SQLite 實體：{db_file_path}", flush=True)
+except Exception as e:
+    print(f"[REBOOT FORCE DISASTER RECOVERY] 嘗試清空鎖死資料庫時失敗（可能已被釋放）：{e}", flush=True)
+
 init_db()
 
 @app.route('/')
