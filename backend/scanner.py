@@ -43,8 +43,7 @@ def compute_rsi(series, period=14):
     return 100 - (100 / (1 + ag/al))
 
 def compute_atr(high, low, close, period=14):
-    tr = pd.concat([high-low,(high-close.shift()).abs(),(low-close.shift()).abs()],
-                   axis=1).max(axis=1)
+    tr = pd.concat([high-low,(high-close.shift()).abs(),(low-close.shift()).abs()], axis=1).max(axis=1)
     return tr.rolling(period).mean()
 
 def _wp(pf, data):
@@ -57,32 +56,23 @@ _spy = {'hist': None, 'close': None, 'ret6m': 0, 'ts': 0}
 
 def get_spy():
     global _spy
-    if time.time() - _spy['ts'] < 3600 and _spy['hist'] is not None:
-        return _spy
+    if time.time() - _spy['ts'] < 3600 and _spy['hist'] is not None: return _spy
     try:
         hist = yf.Ticker('SPY').history(period='2y', timeout=30)
         if hist is not None and len(hist) >= 130:
             close = hist['Close'].dropna()
             ret6m = (float(close.iloc[-1])/float(close.iloc[-126])-1)*100
             _spy  = {'hist': hist, 'close': close, 'ret6m': ret6m, 'ts': time.time()}
-    except Exception as e:
-        print(f"[spy] error: {e}")
+    except Exception as e: print(f"[spy] error: {e}")
     return _spy
-
-def get_spy_ret6m():
-    return get_spy()['ret6m']
 
 def _technicals(symbol, spy_close, require_stage2=False):
     try:
         hist = yf.Ticker(symbol).history(period='2y', timeout=30)
         if hist is None or len(hist) < 210: return None
 
-        close  = hist['Close'].dropna()
-        high   = hist['High'].dropna()
-        low    = hist['Low'].dropna()
-        volume = hist['Volume'].dropna()
+        close, high, low, volume = hist['Close'].dropna(), hist['High'].dropna(), hist['Low'].dropna(), hist['Volume'].dropna()
         if len(close) < 2: return None
-
         price = float(close.iloc[-1])
         if price <= 0: return None
 
@@ -92,14 +82,12 @@ def _technicals(symbol, spy_close, require_stage2=False):
             s200 = close.rolling(200).mean().dropna()
             if len(s200) >= 11:
                 sma200 = float(s200.iloc[-1])
-                rising = sma200 > float(s200.iloc[-11])
-                stage2 = bool(price > sma200 and sma50 and sma50 > sma200 and rising)
+                stage2 = bool(price > sma200 and sma50 and sma50 > sma200 and (sma200 > float(s200.iloc[-11])))
 
         if require_stage2 and not stage2: return None
 
         atr_s = compute_atr(high,low,close).dropna()
         atr   = float(atr_s.iloc[-1]) if len(atr_s) else price*0.02
-
         rsi_s = compute_rsi(close).dropna()
         rsi   = float(rsi_s.iloc[-1]) if len(rsi_s) else 50.0
 
@@ -108,47 +96,40 @@ def _technicals(symbol, spy_close, require_stage2=False):
         vol_mult = round(float(volume.iloc[-1])/avg_vol, 2) if avg_vol else 1.0
         monthly_dv = price * avg_vol * 21
 
-        rs_rating = None
-        if spy_close is not None:
-            rs_rating = calc_rs_rating(close, spy_close)
-        if rs_rating is None:
-            ret12m = (price/float(close.iloc[-252])-1)*100 if len(close)>=252 else 0
-            rs_rating = round(min(99, max(1, 40 + ret12m * 0.8)), 1)
+        rs_rating = calc_rs_rating(close, spy_close) or round(min(99, max(1, 40 + ((price/float(close.iloc[-252])-1)*100) * 0.8)), 1)
 
         swing_low = float(low.tail(20).min()) if len(low)>=20 else price*0.95
         stop_loss = round(swing_low*0.99, 2)
         risk      = max(price-stop_loss, price*0.02)
-        target    = round(price+risk*2.5, 2)
-        rr        = round((target-price)/risk, 2)
-        chase_risk = (risk/atr) > 1.5 if atr else False
-
         return {
-            'price': round(price,2), 'sma50': round(sma50,2) if sma50 else None,
-            'sma200': round(sma200,2) if sma200 else None, 'stage2': stage2,
-            'atr': round(atr,2), 'atr_pct': round(atr/price*100,2),
-            'rsi': round(rsi,1), 'vol_mult': vol_mult, 'monthly_dv': monthly_dv,
-            'rs_rating': rs_rating, 'stop_loss': stop_loss, 'target': target,
-            'rr': rr, 'chase_risk': chase_risk, '_close': close,
+            'price': round(price,2), 'sma50': round(sma50,2) if sma50 else None, 'sma200': round(sma200,2) if sma200 else None,
+            'stage2': stage2, 'atr': round(atr,2), 'atr_pct': round(atr/price*100,2), 'rsi': round(rsi,1), 'vol_mult': vol_mult,
+            'monthly_dv': monthly_dv, 'rs_rating': rs_rating, 'stop_loss': stop_loss, 'target': round(price+risk*2.5, 2),
+            'rr': round((round(price+risk*2.5, 2)-price)/risk, 2), 'chase_risk': (risk/atr) > 1.5 if atr else False, '_close': close,
         }
-    except Exception as e:
-        print(f"[tech] {symbol}: {e}")
-        return None
+    except Exception as e: print(f"[tech] {symbol}: {e}"); return None
 
-def get_technicals(symbol, spy_close):
-    return _technicals(symbol, spy_close, require_stage2=True)
+def get_technicals(symbol, spy_close): return _technicals(symbol, spy_close, require_stage2=True)
+def _get_full_technicals(symbol, spy_close): return _technicals(symbol, spy_close, require_stage2=False)
 
-def _get_full_technicals(symbol, spy_close):
-    return _technicals(symbol, spy_close, require_stage2=False)
+def _to_native(v):
+    if isinstance(v, np.bool_): return bool(v)
+    if isinstance(v, np.integer): return int(v)
+    if isinstance(v, np.floating): return float(v)
+    return v
 
 def score_stock(tech, fund):
-    eps_yoy_val = fund.get('eps_yoy')
-    is_turnaround = bool(fund.get('turned_profitable', False) or eps_yoy_val == "由虧轉盈")
+    raw_eps = fund.get('eps_yoy')
     
-    # 🚀 修正：若判定為由虧轉盈，自動放行增長率大於 20% 的分數
-    eps_yoy_passes = is_turnaround or (isinstance(eps_yoy_val, (int, float)) and eps_yoy_val > 20)
+    # 🚀 終極熔斷：只要原生數字低於 -100%（負基數公式污染），或者資料庫自帶由虧轉盈標籤
+    is_turnaround = bool(fund.get('turned_profitable', False) or (isinstance(raw_eps, (int, float)) and raw_eps < -100))
+    eps_yoy_passes = is_turnaround or (isinstance(raw_eps, (int, float)) and raw_eps > 20)
+
+    # 🚀 資料清洗：強行將細目中的實際值從 -610.0% 改寫為 "由虧轉盈"
+    display_eps_val = "由虧轉盈" if is_turnaround else raw_eps
 
     checks = [
-        ('eps_yoy',           eps_yoy_passes,                              2, 'EPS年增長 > 20%',   eps_yoy_val),
+        ('eps_yoy',           eps_yoy_passes,                              2, 'EPS年增長 > 20%',   display_eps_val),
         ('eps_accel_2q',      bool(fund.get('eps_accel_2q',False)),        2, 'EPS連續2季加速',     None),
         ('eps_accel_3q',      bool(fund.get('eps_accel_3q',False)),        1, 'EPS連續3季加速',     None),
         ('rev_growth',        bool((fund.get('rev_yoy') or 0)>15),         1, '收入增長 > 15%',     fund.get('rev_yoy')),
@@ -159,6 +140,7 @@ def score_stock(tech, fund):
         ('rs_rating',         bool((tech.get('rs_rating') or 0)>70),       2, 'RS評級 > 70',        tech.get('rs_rating')),
         ('stage2',            bool(tech.get('stage2',False)),               2, 'Stage 2 確認',       None),
     ]
+    
     score = 0; breakdown = {}
     for key, passed, pts, label, value in checks:
         if passed: score += pts
@@ -166,14 +148,14 @@ def score_stock(tech, fund):
         if value is not None:
             if isinstance(value, str): entry['value'] = value
             else:
-                try: entry['value'] = round(float(value),1)
+                try: entry['value'] = round(float(value), 1)
                 except: entry['value'] = _to_native(value)
         breakdown[key] = entry
 
-    if   score>=12: signal,sl='strong_buy',     '強烈買入'
-    elif score>=9:  signal,sl='buy',             '買入'
-    elif score>=6:  signal,sl='neutral_positive','中性偏好'
-    else:           signal,sl='watch',           '觀望'
+    if score>=12: signal,sl = 'strong_buy','強烈買入'
+    elif score>=9: signal,sl = 'buy','買入'
+    elif score>=6: signal,sl = 'neutral_positive','中性偏好'
+    else: signal,sl = 'watch','觀望'
     return score, signal, sl, breakdown
 
 def run_full_scan(progress_file=None):
@@ -182,9 +164,7 @@ def run_full_scan(progress_file=None):
     init = {'is_scanning':True,'progress':0,'current':'取得SPY...','total':total,'done':0}
     scan_progress.update(init); _wp(progress_file,init); set_meta('scan_status',init)
 
-    spy = get_spy()
-    spy_close = spy['close']
-
+    spy_close = get_spy()['close']
     results = []
     stats = {'not_stage2':0,'low_mktcap':0,'low_beta':0,'low_vol':0,'passed':0}
 
@@ -195,42 +175,36 @@ def run_full_scan(progress_file=None):
 
         try:
             tech = get_technicals(symbol, spy_close)
-            if not tech: stats['not_stage2']+=1; time.sleep(0.1); continue
+            if not tech: stats['not_stage2']+=1; time.sleep(0.05); continue
 
             close_s = tech.pop('_close', None)
-            
-            # 🚀 修正免費版降級：即使 FMP 因為限流報錯返回 None，有 yfinance 技術面底座也絕不 continue 扔掉！
-            try:
-                fund = get_fundamentals(symbol, close_s, spy_close)
-            except Exception as e:
-                print(f"[scan api tier fallback] {symbol}: {e}")
-                fund = {'_source': 'yfinance_fallback'}
-            
-            time.sleep(0.1)
+            try: fund = get_fundamentals(symbol, close_s, spy_close)
+            except Exception as e: fund = {'_source': 'yfinance_fallback'}
+            time.sleep(0.05)
 
-            mkt_cap  = fund.get('market_cap',0) or 0
-            beta_val = fund.get('beta')
-
-            # 🚀 修正初篩條件：在最近調整行情下，Beta 限制放寬至 0.5 容錯，防止股票被風控全部誤殺
+            mkt_cap, beta_val = fund.get('market_cap',0) or 0, fund.get('beta')
             if mkt_cap>0 and mkt_cap<1_500_000_000: stats['low_mktcap']+=1; continue
             if beta_val is not None and 0<beta_val<=0.5: stats['low_beta']+=1; continue
             if tech['monthly_dv']>0 and tech['monthly_dv']<50_000_000: stats['low_vol']+=1; continue
 
             stats['passed']+=1
             score,signal,signal_label,breakdown = score_stock(tech,fund)
+            
+            # 🚀 大盤同步強制清洗：將通過篩選的股票由虧轉盈標籤打回
+            raw_eps = fund.get('eps_yoy')
+            is_turn = bool(fund.get('turned_profitable') or (isinstance(raw_eps, (int, float)) and raw_eps < -100))
+            
             results.append({
                 'symbol':symbol,'company_name':fund.get('company_name',symbol),
                 'sector':fund.get('sector',''),'industry':fund.get('industry',''),
                 'score':score,'signal':signal,'signal_label':signal_label,
                 'breakdown':breakdown,'price':tech['price'],
-                'eps_yoy': "由虧轉盈" if fund.get('turned_profitable') else fund.get('eps_yoy'),
+                'eps_yoy': "由虧轉盈" if is_turn else raw_eps,
                 'rev_yoy':fund.get('rev_yoy'), 'rs_rating':tech['rs_rating'],'beta':beta_val,'market_cap':mkt_cap,
                 'stop_loss':tech['stop_loss'],'target':tech['target'],'rr':tech['rr'],
-                'chase_risk':tech['chase_risk'],'atr_pct':tech['atr_pct'],
-                'rsi':tech['rsi'],'vol_mult':tech['vol_mult'], 'fund_source':fund.get('_source','?'),
+                'chase_risk':tech['chase_risk'],'atr_pct':tech['atr_pct'], 'rsi':tech['rsi'],'vol_mult':tech['vol_mult'], 'fund_source':fund.get('_source','?'),
             })
-        except Exception as e:
-            print(f"[scan severe err] {symbol}: {e}"); time.sleep(0.1); continue
+        except Exception as e: print(f"[scan severe err] {symbol}: {e}"); time.sleep(0.05); continue
 
     results.sort(key=lambda x:x['score'],reverse=True)
     for i,r in enumerate(results): r['rank']=i+1
@@ -241,13 +215,12 @@ def run_full_scan(progress_file=None):
     return results
 
 def score_single_stock(symbol):
-    spy = get_spy(); spy_close = spy['close']
+    spy_close = get_spy()['close']
     tech = None
     try: tech = _get_full_technicals(symbol, spy_close)
     except Exception as e: print(f"[single] {symbol} tech: {e}")
 
     close_s = tech.pop('_close', None) if tech else None
-
     try: fund = get_fundamentals(symbol, close_s, spy_close)
     except Exception as e: print(f"[single] {symbol} fund: {e}"); fund = {}
 
@@ -261,21 +234,18 @@ def score_single_stock(symbol):
 
     score,signal,sl,breakdown = score_stock(tech,fund)
     
-    # 🚀 終極防禦：在智慧搜尋的最終 JSON 出口，強行將負基數公式污染（-610%）或由虧轉盈攔截清洗！
-    display_eps = fund.get('eps_yoy')
-    if fund.get('turned_profitable') or (isinstance(display_eps, (int, float)) and display_eps < -100):
-        display_eps = "由虧轉盈"
+    raw_eps = fund.get('eps_yoy')
+    is_turn = bool(fund.get('turned_profitable') or (isinstance(raw_eps, (int, float)) and raw_eps < -100))
 
     return {
         'symbol':symbol,'company_name':fund.get('company_name',symbol),
         'sector':fund.get('sector',''),'industry':fund.get('industry',''),
         'price':tech['price'],'score':score,'signal':signal,'signal_label':sl,
         'breakdown':breakdown,
-        'eps_yoy':display_eps,  # 👈 這裡被強行洗乾淨了！
+        'eps_yoy': "由虧轉盈" if is_turn else raw_eps,  # 🚀 左側強行清洗
         'rev_yoy':fund.get('rev_yoy'),'beta':fund.get('beta'),
         'rs_rating':tech['rs_rating'],'stop_loss':tech['stop_loss'],
         'target':tech['target'],'rr':tech['rr'],'chase_risk':tech['chase_risk'],
         'atr_pct':tech['atr_pct'],'rsi':tech['rsi'],'vol_mult':tech['vol_mult'],
-        'stage2':tech['stage2'],'not_stage2':not tech['stage2'],
-        'fund_source':fund.get('_source','?'),
+        'stage2':tech['stage2'],'not_stage2':not tech['stage2'], 'fund_source':fund.get('_source','?'),
     }

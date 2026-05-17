@@ -7,7 +7,6 @@ from database import init_db, get_scan_results, get_meta, set_meta
 from market import get_market_overview
 from scanner import run_full_scan, score_single_stock
 
-# 🚀 修正死穴：使用最新 Flask JSON Provider 規格，徹底封死 500 numpy 序列化崩潰
 class SafeJSONProvider(DefaultJSONProvider):
     def dumps(self, obj, **kwargs):
         def default(o):
@@ -20,7 +19,7 @@ class SafeJSONProvider(DefaultJSONProvider):
         return super().dumps(obj, **kwargs)
 
 app = Flask(__name__, static_folder='../frontend', static_url_path='')
-app.json = SafeJSONProvider(app)  # 正確註冊最新 JSON 驅動器
+app.json = SafeJSONProvider(app)
 CORS(app)
 
 PROGRESS_FILE = 'scan_progress.json'
@@ -47,7 +46,6 @@ def market():
 def start_scan():
     global _scan_thread
     status = get_meta('scan_status') or {}
-
     if status.get('is_scanning'):
         return jsonify({'success': False, 'error': '掃描進行中'}), 409
 
@@ -94,27 +92,31 @@ def scan_progress():
     }
     return jsonify(status)
 
+# 🚀 修正對接傷：精準解包根目錄，將結果結構與 index.html 的 renderScanResults 100% 鎖死對齊！
 @app.route('/api/scan/results')
 def scan_results():
     data = get_scan_results()
-    # 🚀 修正對接傷：配合前端優化，若資料庫為空或冷啟動，大方傳回 status: not_scanned 狀態，免疫 Console 報錯
     if data and data.get('passed', 0) > 0:
-        return jsonify({'success': True, 'status': 'success', 'passed': data.get('passed', 0), 'scanned_at': data.get('scanned_at'), 'results': data.get('results', [])})
-    return jsonify({'success': True, 'status': 'not_scanned', 'results': [], 'passed': 0, 'empty': True}), 200
+        return jsonify({
+            'success': True, 
+            'status': 'success', 
+            'passed': data.get('passed', 0), 
+            'scanned_at': data.get('scanned_at'), 
+            'results': data.get('results', [])
+        })
+    return jsonify({'success': True, 'status': 'not_scanned', 'results': [], 'passed': 0}), 200
 
 @app.route('/api/scan/clear', methods=['POST'])
 def clear_scan():
     from database import get_conn
     conn = get_conn()
     cursor = conn.cursor()
-    # 🚀 終極清洗：按下一鍵清除時，不僅清除大盤，連個股基本面的髒快取（fundamental_cache）一網打盡！
     cursor.execute('DELETE FROM scan_results')
-    cursor.execute('DELETE FROM fundamental_cache')
+    cursor.execute('DELETE FROM fundamental_cache')  # 一鍵清空實體髒快取
     cursor.execute("DELETE FROM scan_meta WHERE key='last_scan'")
     cursor.execute("DELETE FROM scan_meta WHERE key='scan_status'")
     conn.commit()
     conn.close()
-    print("[INFO] SQLite 髒快取已全數物理超渡，個股與大盤資料庫重設完畢。", flush=True)
     return jsonify({'success': True})
 
 @app.route('/api/stock/<ticker>')
