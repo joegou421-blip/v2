@@ -59,24 +59,20 @@ def start_scan():
     global _scan_thread
     status = get_meta('scan_status') or {}
 
-    # 🚀 終極修正：如果發現正在掃描，絕對不能回傳 'cached': True！否則前端會誤以為結束而直接抓取空數據！
+    # 如果發現系統本來就已經在背景全速掃描了，直接溫柔放行讓前端接管進度條
     if status.get('is_scanning'):
-        print("[INFO] 偵測到重複觸發掃描，系統已自動接管並維持原有進度線程。", flush=True)
+        print("[INFO] 偵測到重複或正在運行的掃描線程，自動接通進度。", flush=True)
         return jsonify({
             'success': True, 'already_running': True,
             'is_scanning': True, 'progress': status.get('progress', 0),
+            'current': status.get('current', '掃描中...'),
             'data': status
-        })  # 🎯 成功物理切除內鬼 'cached': True 標籤！
-
-    cached = get_scan_results()
-    if cached and isinstance(cached, dict) and cached.get('passed', 0) > 0:
-        return jsonify({
-            'success': True, 'cached': True, 'is_scanning': False, 'progress': 100,
-            'data': cached, 'results': cached.get('results', [])
         })
 
-    set_meta('scan_status', {'is_scanning': True, 'progress': 0,
-                              'current': '啟動中...', 'total': 227, 'done': 0})
+    # 🚀 終極降維斬首：徹底拔除 cached 攔截阻礙！只要點擊紫色按鈕，無條件強制開啟新一輪實時全掃描！
+    # 這能 100% 解決前端卡死在「已載入緩存結果」卻完全不跑進度條、沒變化的死循環
+    new_status = {'is_scanning': True, 'progress': 0, 'current': '準備啟動中...', 'total': 227, 'done': 0}
+    set_meta('scan_status', new_status)
 
     def do_scan():
         try:
@@ -88,7 +84,15 @@ def start_scan():
 
     _scan_thread = threading.Thread(target=do_scan, daemon=True)
     _scan_thread.start()
-    return jsonify({'success': True, 'message': '掃描已開始', 'is_scanning': True, 'progress': 0})
+    
+    return jsonify({
+        'success': True, 
+        'message': '掃描已強制開始', 
+        'is_scanning': True, 
+        'progress': 0,
+        'current': '啟動中...',
+        'data': new_status
+    })
 
 @app.route('/api/scan/cron', methods=['POST', 'GET'])
 def cron_scan():
@@ -111,13 +115,14 @@ def cron_scan():
     threading.Thread(target=do_cron, daemon=True).start()
     return jsonify({'success': True, 'message': 'cron scan started'})
 
-# 🚀 雙軌導流通電：同時支援舊版的 /progress 與新版的 /status，100% 封殺前端尋址錯誤！
+# 🚀 雙軌導流通電：同時支援舊版的 /progress 與新版的 /status，100% 滿足前端輪詢寫法！
 @app.route('/api/scan/progress')
 @app.route('/api/scan/status')
 def scan_progress():
     status = get_meta('scan_status') or {
         'is_scanning': False, 'progress': 0, 'current': '未啟動', 'total': 227, 'done': 0
     }
+    # 🚀 全相容大融合：同時支援 json.is_scanning、json.data.is_scanning 的前端格式
     return jsonify({
         'success': True,
         'is_scanning': status.get('is_scanning', False),
