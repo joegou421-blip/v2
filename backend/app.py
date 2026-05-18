@@ -5,8 +5,8 @@ import numpy as np
 from flask.json.provider import DefaultJSONProvider
 from database import init_db, get_scan_results, get_meta, set_meta
 from market import get_market_overview
-from scanner import run_full_scan, score_single_stock
-
+# 🚀 物理校準：把找不到的 score_single_stock 拿掉，只留下真正存在的核心選股管線與函式
+from scanner import run_full_scan, score_stock
 class SafeJSONProvider(DefaultJSONProvider):
     def dumps(self, obj, **kwargs):
         def default(o):
@@ -146,10 +146,51 @@ def single_stock(ticker):
     if not re.match(r'^[A-Z.\-]{1,10}$', symbol):
         return jsonify({'success': False, 'error': '代號格式錯誤'}), 400
     try:
-        result = score_single_stock(symbol)
-        if result is not None:
-            return jsonify({'success': True, 'data': result})
-        return jsonify({'success': False, 'error': f'無法取得 {symbol} 數據'}), 404
+        # 🚀 降維通電：單股查詢全自動調用核心技術面與基本面清洗管線
+        from scanner import get_technicals, get_fundamentals, score_stock
+        import time
+
+        spy_close = 400.0  # 預設大盤基準
+        try:
+            from scanner import get_spy
+            spy_close = get_spy()['close']
+        except:
+            pass
+
+        tech = get_technicals(symbol, spy_close)
+        if not tech:
+            return jsonify({'success': False, 'error': f'無法取得 {symbol} 技術數據'}), 404
+
+        close_s = tech.pop('_close', None)
+        try:
+            fund = get_fundamentals(symbol, close_s, spy_close)
+        except:
+            fund = {'_source': 'yfinance_fallback'}
+
+        # 核心清算
+        score, signal, signal_label, breakdown = score_stock(tech, fund)
+        
+        # 數據封裝打包
+        raw_eps = fund.get('eps_yoy')
+        import numpy as np
+        is_turn = bool(fund.get('turned_profitable') or (isinstance(raw_eps, (int, float)) and raw_eps < -100))
+
+        result = {
+            'symbol': symbol,
+            'company_name': fund.get('company_name', symbol),
+            'price': tech['price'],
+            'score': score,
+            'signal': signal,
+            'signal_label': signal_label,
+            'not_stage2': tech.get('not_stage2', False),
+            'rev_yoy': None if (isinstance(fund.get('rev_yoy'), float) and np.isnan(fund.get('rev_yoy'))) else fund.get('rev_yoy'),
+            'eps_yoy': "由虧轉盈" if is_turn else (None if (isinstance(raw_eps, float) and np.isnan(raw_eps)) else raw_eps),
+            'beta': 1.0 if (fund.get('beta') is None or (isinstance(fund.get('beta'), float) and np.isnan(fund.get('beta')))) else fund.get('beta'),
+            'rs_rating': 50.0 if (tech.get('rs_rating') is None or (isinstance(tech.get('rs_rating'), float) and np.isnan(tech.get('rs_rating')))) else tech['rs_rating']
+        }
+
+        return jsonify({'success': True, 'data': result})
+
     except Exception as e:
         print(f"[api] /stock/{symbol} error: {e}")
         return jsonify({'success': False, 'error': str(e)}), 500
