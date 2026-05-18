@@ -190,7 +190,7 @@ def run_full_scan(progress_file=None):
             if beta_val is not None and 0 < beta_val <= 0.5: stats['low_beta']+=1; continue
             if tech['monthly_dv'] > 0 and tech['monthly_dv'] < 50_000_000: stats['low_vol']+=1; continue
 
-            # 🚀 終極淨化防線：在數據裝箱前，強行把所有可能引發前端 JSON 核爆的 NaN 毒瘤徹底清洗！
+            # 🚀 終極淨化防線
             clean_rs = tech.get('rs_rating')
             if clean_rs is None or (isinstance(clean_rs, float) and np.isnan(clean_rs)):
                 clean_rs = 50.0
@@ -202,10 +202,10 @@ def run_full_scan(progress_file=None):
             stats['passed']+=1
             score, signal, signal_label, breakdown = score_stock(tech, fund)
             
-           raw_eps = fund.get('eps_yoy')
+            # 🚀 大盤同步強制清洗與遞迴過濾網
+            raw_eps = fund.get('eps_yoy')
             is_turn = bool(fund.get('turned_profitable') or (isinstance(raw_eps, (int, float)) and raw_eps < -100))
             
-            # 🎯 終極遞迴淨化防線：徹底絞殺所有隱藏在深層結構（如 breakdown 陣列）裡的 NaN
             def _purge(obj):
                 import math
                 if isinstance(obj, dict): return {k: _purge(v) for k, v in obj.items()}
@@ -227,7 +227,6 @@ def run_full_scan(progress_file=None):
                 'chase_risk': tech['chase_risk'], 'atr_pct': tech['atr_pct'], 
                 'rsi': tech['rsi'], 'vol_mult': tech['vol_mult'], 'fund_source': fund.get('_source', '?')
             }
-            # 🚀 經過黑洞淨化網後，才准進入結果陣列！
             results.append(_purge(raw_item))
         except Exception as e:
             print(f"[scan severe err] {symbol}: {e}")
@@ -240,3 +239,4 @@ def run_full_scan(progress_file=None):
 
     done = {'is_scanning':False,'progress':100,'current':'完成！已存入','total':total,'done':total,'stats':stats}
     scan_progress.update(done); _wp(progress_file,done); set_meta('scan_status',done)
+
