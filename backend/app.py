@@ -7,6 +7,7 @@ from database import init_db, get_scan_results, get_meta, set_meta
 from market import get_market_overview
 # 🚀 物理校準：把找不到的 score_single_stock 拿掉，只留下真正存在的核心選股管線與函式
 from scanner import run_full_scan, score_stock
+
 class SafeJSONProvider(DefaultJSONProvider):
     def dumps(self, obj, **kwargs):
         def default(o):
@@ -58,16 +59,21 @@ def start_scan():
     global _scan_thread
     status = get_meta('scan_status') or {}
 
-    # 🚀 終極放行防禦：如果發現掃描已經在背景跑了，絕對不噴 409！
-    # 直接溫柔地回傳成功，並告訴前端「繼續讀取進度就對了」，徹底封死前端錯亂 Bug
+    # 🚀 全相容放護：不管前端想找哪個欄位，通通塞滿，絕不給它 undefined 的機會！
     if status.get('is_scanning'):
         print("[INFO] 偵測到重複觸發掃描，系統已自動接管並維持原有進度線程。", flush=True)
-        return jsonify({'success': True, 'already_running': True, 'cached': True})
+        return jsonify({
+            'success': True, 'already_running': True, 'cached': True,
+            'is_scanning': True, 'progress': status.get('progress', 0),
+            'data': status
+        })
 
-    # If DB already has results, return them
     cached = get_scan_results()
-    if cached and cached.get('passed', 0) > 0:
-        return jsonify({'success': True, 'cached': True})
+    if cached and isinstance(cached, dict) and cached.get('passed', 0) > 0:
+        return jsonify({
+            'success': True, 'cached': True, 'is_scanning': False, 'progress': 100,
+            'data': cached, 'results': cached.get('results', [])
+        })
 
     set_meta('scan_status', {'is_scanning': True, 'progress': 0,
                               'current': '啟動中...', 'total': 227, 'done': 0})
@@ -82,7 +88,7 @@ def start_scan():
 
     _scan_thread = threading.Thread(target=do_scan, daemon=True)
     _scan_thread.start()
-    return jsonify({'success': True, 'message': '掃描已開始'})
+    return jsonify({'success': True, 'message': '掃描已開始', 'is_scanning': True, 'progress': 0})
 
 @app.route('/api/scan/cron', methods=['POST', 'GET'])
 def cron_scan():
@@ -105,26 +111,40 @@ def cron_scan():
     threading.Thread(target=do_cron, daemon=True).start()
     return jsonify({'success': True, 'message': 'cron scan started'})
 
+# 🚀 雙軌導流通電：同時支援舊版的 /progress 與新版的 /status，100% 封殺前端尋址錯誤！
 @app.route('/api/scan/progress')
+@app.route('/api/scan/status')
 def scan_progress():
     status = get_meta('scan_status') or {
-        'is_scanning': False, 'progress': 0, 'current': '', 'total': 227, 'done': 0
+        'is_scanning': False, 'progress': 0, 'current': '未啟動', 'total': 227, 'done': 0
     }
-    return jsonify(status)
+    # 🚀 全相容大融合：同時支援 data.progress、data.is_scanning 與 data.data.is_scanning 寫法！
+    return jsonify({
+        'success': True,
+        'is_scanning': status.get('is_scanning', False),
+        'progress': status.get('progress', 0),
+        'current': status.get('current', ''),
+        'total': status.get('total', 0),
+        'done': status.get('done', 0),
+        'stats': status.get('stats', {}),
+        'data': status
+    })
 
 # 🚀 修正對接傷：精準解包根目錄，將結果結構與 index.html 的 renderScanResults 100% 鎖死對齊！
 @app.route('/api/scan/results')
 def scan_results():
-    data = get_scan_results()
-    if data and data.get('passed', 0) > 0:
-        return jsonify({
-            'success': True, 
-            'status': 'success', 
-            'passed': data.get('passed', 0), 
-            'scanned_at': data.get('scanned_at'), 
-            'results': data.get('results', [])
-        })
-    return jsonify({'success': True, 'status': 'not_scanned', 'results': [], 'passed': 0}), 200
+    data = get_scan_results() or {'results': [], 'stats': {}, 'passed': 0}
+    results_list = data.get('results', []) if isinstance(data, dict) else (data if isinstance(data, list) else [])
+    
+    # 🚀 全相容大包抄：管你前端要 json.data 還是 json.results，通通一網打盡！
+    return jsonify({
+        'success': True, 
+        'status': 'success', 
+        'passed': data.get('passed', 0) if isinstance(data, dict) else len(results_list), 
+        'scanned_at': data.get('scanned_at') if isinstance(data, dict) else None, 
+        'data': data,
+        'results': results_list
+    })
 
 @app.route('/api/scan/clear', methods=['POST'])
 def clear_scan():
@@ -183,6 +203,7 @@ def single_stock(ticker):
             'signal': signal,
             'signal_label': signal_label,
             'not_stage2': tech.get('not_stage2', False),
+            'breakdown': breakdown,
             'rev_yoy': None if (isinstance(fund.get('rev_yoy'), float) and np.isnan(fund.get('rev_yoy'))) else fund.get('rev_yoy'),
             'eps_yoy': "由虧轉盈" if is_turn else (None if (isinstance(raw_eps, float) and np.isnan(raw_eps)) else raw_eps),
             'beta': 1.0 if (fund.get('beta') is None or (isinstance(fund.get('beta'), float) and np.isnan(fund.get('beta')))) else fund.get('beta'),
