@@ -174,35 +174,56 @@ def run_full_scan(progress_file=None):
         if i%10==0: _wp(progress_file,state); set_meta('scan_status',state)
 
         try:
-            tech = get_technicals(symbol, spy_close)
-            if not tech: stats['not_stage2']+=1; time.sleep(0.05); continue
-
-            close_s = tech.pop('_close', None)
-            try: fund = get_fundamentals(symbol, close_s, spy_close)
-            except Exception as e: fund = {'_source': 'yfinance_fallback'}
+                fund = get_fundamentals(symbol, close_s, spy_close)
+            except Exception as e:
+                print(f"[scan api tier fallback] {symbol}: {e}")
+                fund = {'_source': 'yfinance_fallback'}
+            
             time.sleep(0.05)
 
-            mkt_cap, beta_val = fund.get('market_cap',0) or 0, fund.get('beta')
-            if mkt_cap>0 and mkt_cap<1_500_000_000: stats['low_mktcap']+=1; continue
-            if beta_val is not None and 0<beta_val<=0.5: stats['low_beta']+=1; continue
-            if tech['monthly_dv']>0 and tech['monthly_dv']<50_000_000: stats['low_vol']+=1; continue
+            mkt_cap, beta_val = fund.get('market_cap', 0) or 0, fund.get('beta')
+            if mkt_cap > 0 and mkt_cap < 1_500_000_000: stats['low_mktcap'] += 1; continue
+            if beta_val is not None and 0 < beta_val <= 0.5: stats['low_beta'] += 1; continue
+            if tech['monthly_dv'] > 0 and tech['monthly_dv'] < 50_000_000: stats['low_vol'] += 1; continue
 
-            stats['passed']+=1
-            score,signal,signal_label,breakdown = score_stock(tech,fund)
+            # 🚀 終極淨化防線：在數據裝箱前，強行把所有可能引發前端 JSON 核爆的 NaN 毒瘤徹底清洗！
+            clean_rs = tech.get('rs_rating')
+            if clean_rs is None or (isinstance(clean_rs, float) and np.isnan(clean_rs)):
+                clean_rs = 50.0  # NaN 自動歸位中性基準分
+                
+            clean_beta = beta_val
+            if clean_beta is None or (isinstance(clean_beta, float) and np.isnan(clean_beta)):
+                clean_beta = 1.0  # NaN 自動歸位大盤基準 Beta
+
+            stats['passed'] += 1
+            score, signal, signal_label, breakdown = score_stock(tech, fund)
             
-            # 🚀 大盤同步強制清洗：將通過篩選的股票由虧轉盈標籤打回
             raw_eps = fund.get('eps_yoy')
             is_turn = bool(fund.get('turned_profitable') or (isinstance(raw_eps, (int, float)) and raw_eps < -100))
             
             results.append({
-                'symbol':symbol,'company_name':fund.get('company_name',symbol),
-                'sector':fund.get('sector',''),'industry':fund.get('industry',''),
-                'score':score,'signal':signal,'signal_label':signal_label,
-                'breakdown':breakdown,'price':tech['price'],
-                'eps_yoy': "由虧轉盈" if is_turn else raw_eps,
-                'rev_yoy':fund.get('rev_yoy'), 'rs_rating':tech['rs_rating'],'beta':beta_val,'market_cap':mkt_cap,
-                'stop_loss':tech['stop_loss'],'target':tech['target'],'rr':tech['rr'],
-                'chase_risk':tech['chase_risk'],'atr_pct':tech['atr_pct'], 'rsi':tech['rsi'],'vol_mult':tech['vol_mult'], 'fund_source':fund.get('_source','?'),
+                'symbol': symbol,
+                'company_name': fund.get('company_name', symbol),
+                'sector': fund.get('sector', ''),
+                'industry': fund.get('industry', ''),
+                'score': score,
+                'signal': signal,
+                'signal_label': signal_label,
+                'breakdown': breakdown,
+                'price': tech['price'],
+                'eps_yoy': "由虧轉盈" if is_turn else (None if (isinstance(raw_eps, float) and np.isnan(raw_eps)) else raw_eps),
+                'rev_yoy': None if (isinstance(fund.get('rev_yoy'), float) and np.isnan(fund.get('rev_yoy'))) else fund.get('rev_yoy'), 
+                'rs_rating': clean_rs,  # 👈 淨化完畢
+                'beta': clean_beta,      # 👈 淨化完畢
+                'market_cap': mkt_cap,
+                'stop_loss': tech['stop_loss'],
+                'target': tech['target'],
+                'rr': tech['rr'],
+                'chase_risk': tech['chase_risk'],
+                'atr_pct': tech['atr_pct'], 
+                'rsi': tech['rsi'],
+                'vol_mult': tech['vol_mult'], 
+                'fund_source': fund.get('_source', '?'),
             })
         except Exception as e: print(f"[scan severe err] {symbol}: {e}"); time.sleep(0.05); continue
 
