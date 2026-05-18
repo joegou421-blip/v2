@@ -59,14 +59,14 @@ def start_scan():
     global _scan_thread
     status = get_meta('scan_status') or {}
 
-    # 🚀 全相容放護：不管前端想找哪個欄位，通通塞滿，絕不給它 undefined 的機會！
+    # 🚀 終極修正：如果發現正在掃描，絕對不能回傳 'cached': True！否則前端會誤以為結束而直接抓取空數據！
     if status.get('is_scanning'):
         print("[INFO] 偵測到重複觸發掃描，系統已自動接管並維持原有進度線程。", flush=True)
         return jsonify({
-            'success': True, 'already_running': True, 'cached': True,
+            'success': True, 'already_running': True,
             'is_scanning': True, 'progress': status.get('progress', 0),
             'data': status
-        })
+        })  # 🎯 成功物理切除內鬼 'cached': True 標籤！
 
     cached = get_scan_results()
     if cached and isinstance(cached, dict) and cached.get('passed', 0) > 0:
@@ -118,7 +118,6 @@ def scan_progress():
     status = get_meta('scan_status') or {
         'is_scanning': False, 'progress': 0, 'current': '未啟動', 'total': 227, 'done': 0
     }
-    # 🚀 全相容大融合：同時支援 data.progress、data.is_scanning 與 data.data.is_scanning 寫法！
     return jsonify({
         'success': True,
         'is_scanning': status.get('is_scanning', False),
@@ -136,7 +135,6 @@ def scan_results():
     data = get_scan_results() or {'results': [], 'stats': {}, 'passed': 0}
     results_list = data.get('results', []) if isinstance(data, dict) else (data if isinstance(data, list) else [])
     
-    # 🚀 全相容大包抄：管你前端要 json.data 還是 json.results，通通一網打盡！
     return jsonify({
         'success': True, 
         'status': 'success', 
@@ -166,11 +164,10 @@ def single_stock(ticker):
     if not re.match(r'^[A-Z.\-]{1,10}$', symbol):
         return jsonify({'success': False, 'error': '代號格式錯誤'}), 400
     try:
-        # 🚀 降維通電：單股查詢全自動調用核心技術面與基本面清洗管線
         from scanner import get_technicals, get_fundamentals, score_stock
         import time
 
-        spy_close = 400.0  # 預設大盤基準
+        spy_close = 400.0  
         try:
             from scanner import get_spy
             spy_close = get_spy()['close']
@@ -187,10 +184,8 @@ def single_stock(ticker):
         except:
             fund = {'_source': 'yfinance_fallback'}
 
-        # 核心清算
         score, signal, signal_label, breakdown = score_stock(tech, fund)
         
-        # 數據封裝打包
         raw_eps = fund.get('eps_yoy')
         import numpy as np
         is_turn = bool(fund.get('turned_profitable') or (isinstance(raw_eps, (int, float)) and raw_eps < -100))
