@@ -202,24 +202,33 @@ def run_full_scan(progress_file=None):
             stats['passed']+=1
             score, signal, signal_label, breakdown = score_stock(tech, fund)
             
-            # 🚀 大盤同步強制清洗
-            raw_eps = fund.get('eps_yoy')
+           raw_eps = fund.get('eps_yoy')
             is_turn = bool(fund.get('turned_profitable') or (isinstance(raw_eps, (int, float)) and raw_eps < -100))
             
-            results.append({
+            # 🎯 終極遞迴淨化防線：徹底絞殺所有隱藏在深層結構（如 breakdown 陣列）裡的 NaN
+            def _purge(obj):
+                import math
+                if isinstance(obj, dict): return {k: _purge(v) for k, v in obj.items()}
+                if isinstance(obj, list): return [_purge(v) for v in obj]
+                if isinstance(obj, float) and math.isnan(obj): return None
+                return obj
+            
+            raw_item = {
                 'symbol': symbol, 'company_name': fund.get('company_name', symbol),
                 'sector': fund.get('sector', ''), 'industry': fund.get('industry', ''),
                 'score': score, 'signal': signal, 'signal_label': signal_label,
                 'breakdown': breakdown, 'price': tech['price'],
-                'eps_yoy': "由虧轉盈" if is_turn else (None if (isinstance(raw_eps, float) and np.isnan(raw_eps)) else raw_eps),
-                'rev_yoy': None if (isinstance(fund.get('rev_yoy'), float) and np.isnan(fund.get('rev_yoy'))) else fund.get('rev_yoy'), 
+                'eps_yoy': "由虧轉盈" if is_turn else raw_eps,
+                'rev_yoy': fund.get('rev_yoy'), 
                 'rs_rating': clean_rs,
                 'beta': clean_beta,
                 'market_cap': mkt_cap,
                 'stop_loss': tech['stop_loss'], 'target': tech['target'], 'rr': tech['rr'],
                 'chase_risk': tech['chase_risk'], 'atr_pct': tech['atr_pct'], 
-                'rsi': tech['rsi'], 'vol_mult': tech['vol_mult'], 'fund_source': fund.get('_source', '?'),
-            })
+                'rsi': tech['rsi'], 'vol_mult': tech['vol_mult'], 'fund_source': fund.get('_source', '?')
+            }
+            # 🚀 經過黑洞淨化網後，才准進入結果陣列！
+            results.append(_purge(raw_item))
         except Exception as e:
             print(f"[scan severe err] {symbol}: {e}")
             time.sleep(0.05)
