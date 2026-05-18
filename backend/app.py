@@ -52,12 +52,22 @@ def market():
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 500
 
+# ── Scan: start ───────────────────────────────────────────────────────────────
 @app.route('/api/scan/start', methods=['POST'])
 def start_scan():
     global _scan_thread
     status = get_meta('scan_status') or {}
+
+    # 🚀 終極放行防禦：如果發現掃描已經在背景跑了，絕對不噴 409！
+    # 直接溫柔地回傳成功，並告訴前端「繼續讀取進度就對了」，徹底封死前端錯亂 Bug
     if status.get('is_scanning'):
-        return jsonify({'success': False, 'error': '掃描進行中'}), 409
+        print("[INFO] 偵測到重複觸發掃描，系統已自動接管並維持原有進度線程。", flush=True)
+        return jsonify({'success': True, 'already_running': True, 'cached': True})
+
+    # If DB already has results, return them
+    cached = get_scan_results()
+    if cached and cached.get('passed', 0) > 0:
+        return jsonify({'success': True, 'cached': True})
 
     set_meta('scan_status', {'is_scanning': True, 'progress': 0,
                               'current': '啟動中...', 'total': 227, 'done': 0})
