@@ -1418,10 +1418,79 @@ function openDetail(symbol) {
       ${stock.atr_pct !== undefined ? `<div class="breakdown-item"><div class="bi-left"><div class="bi-icon pass">📈</div><div><div class="bi-label">ATR%（日均波動）</div></div></div><div class="bi-points">${stock.atr_pct}%</div></div>` : ''}
       ${stock.vol_mult !== undefined ? `<div class="breakdown-item"><div class="bi-left"><div class="bi-icon ${stock.vol_mult > 1.5 ? 'pass' : 'fail'}">📦</div><div><div class="bi-label">成交量倍數</div></div></div><div class="bi-points">${stock.vol_mult}x</div></div>` : ''}
       <div class="breakdown-item"><div class="bi-left"><div class="bi-icon pass">⚡</div><div><div class="bi-label">Beta（市場敏感度）</div></div></div><div class="bi-points">${(stock.beta != null && stock.beta !== undefined) ? Number(stock.beta).toFixed(2) : '--'}</div></div>
+   </div>
+
+    <div class="section-title" style="margin-top:25px; color:var(--accent);">🤖 AI 圓桌會 · 跨平台對抗審查</div>
+    <div class="breakdown-list" style="padding:16px; background:var(--bg2); border-color:var(--accent);">
+      <div id="aiDebateDisplay" style="font-size:13px; line-height:1.6;">
+          <p style="color:var(--text3); text-align:center;">💡 提示：在下方輸入你想詢問的方向（如：看短線、有利空新聞嗎？），點火啟動開源三巨頭互咬壓力測試！</p>
+      </div>
+      
+      <div style="display:flex; gap:8px; margin-top:15px; border-top:1px solid var(--border); padding-top:12px;">
+        <input type="text" id="aiQueryInput" placeholder="例如：看短線、有什麼分析師評語、適合現價進嗎？" 
+               style="flex:1; background:var(--bg3); border:1px solid var(--border2); padding:10px; border-radius:8px; color:var(--text); outline:none; font-size:13px;">
+        <button onclick="triggerAiDebate('${stock.symbol}')" id="aiDebateBtn"
+                style="background:var(--accent); color:#fff; border:none; padding:10px 16px; border-radius:8px; font-weight:bold; cursor:pointer; font-size:13px; white-space:nowrap;">
+          點火會審
+        </button>
+      </div>
     </div>
   `;
 
   document.getElementById('detailView').classList.add('open');
+}
+
+// 🚀 跨平台開源 AI 圓桌會對抗核心發射管線
+async function triggerAiDebate(symbol) {
+  let stock = currentResults.find(s => s.symbol === symbol);
+  if(!stock && window._searchResult && window._searchResult.symbol === symbol) stock = window._searchResult;
+  if(!stock) return;
+
+  const input = document.getElementById('aiQueryInput');
+  const btn = document.getElementById('aiDebateBtn');
+  const display = document.getElementById('aiDebateDisplay');
+  const query = input.value.trim() || "請評估這隻股票的短線走勢與最新新聞";
+
+  btn.disabled = true;
+  btn.textContent = "辯論進行中...";
+  display.innerHTML = `
+    <div style="text-align:center; padding:20px; color:var(--text2);">
+      <div class="spinner" style="margin:0 auto 10px;"></div>
+      🔥 開源智囊團（Llama3 + Mistral + DeepSeek）正在針對最新新聞與數據空缺展開獵巫式撕咬...
+    </div>`;
+
+  try {
+      const res = await fetch(`${API_BASE}/api/scan/ai_debate`, {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({ stock_data: stock, query: query })
+      });
+      const json = await res.json();
+      
+      if(json.success) {
+          display.innerHTML = `
+              <div style="margin-bottom:12px; background:#0f172a; padding:12px; border-radius:8px; border-left:4px solid var(--signal-buy);">
+                  <strong style="color:var(--signal-buy);">🚀 【趨勢動能官 · Llama 3】:</strong>
+                  <p style="margin-top:6px; color:var(--text); font-size:12.5px;">${json.p1_opinion}</p>
+              </div>
+              <div style="margin-bottom:12px; background:#1c1018; padding:12px; border-radius:8px; border-left:4px solid var(--red);">
+                  <strong style="color:var(--red);">🔮 【基本面刺客 · Mistral Large】(嚴厲質疑數據空缺):</strong>
+                  <p style="margin-top:6px; color:var(--text); font-size:12.5px;">${json.p2_opinion}</p>
+              </div>
+              <div style="background:#131124; padding:14px; border-radius:8px; border:1px solid var(--accent); box-shadow: 0 0 15px rgba(124,106,247,0.15);">
+                  <strong style="color:var(--yellow);">👑 【最高風控裁決官 · DeepSeek】(聯網新聞與情報共識):</strong>
+                  <p style="margin-top:8px; color:var(--text); font-weight:500; font-size:13px; line-height:1.65;">${json.final_consensus}</p>
+              </div>
+          `;
+      } else {
+          display.innerHTML = `<p style="color:var(--red); text-align:center; font-size:13px;">⚠️ 會議中斷：${json.error}</p>`;
+      }
+  } catch(e) {
+      display.innerHTML = `<p style="color:var(--red); text-align:center; font-size:13px;">🌐 連線失敗，請確認後端 OpenRouter 機制是否正常運作。</p>`;
+  } finally {
+      btn.disabled = false;
+      btn.textContent = "點火會審";
+  }
 }
 
 // ─── SEARCH ───────────────────────────────────────────────────────────────────

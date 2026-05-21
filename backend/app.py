@@ -247,6 +247,79 @@ def single_stock(ticker):
         print(f"[api] /stock/{symbol} global error: {e}")
         return jsonify({'success': False, 'error': str(e)}), 500
 
+# ─── 🤖 AI MULTI-AGENT ADVERSARIAL DEBATE ROUNDTABLE (方案 B: 免 VPN 開源鋼鐵陣容) ───
+@app.route('/api/scan/ai_debate', methods=['POST'])
+def ai_debate():
+    import os, requests
+    # 🚀 自動讀取大佬提供的 OpenRouter Key，保障全線通車
+    api_key = os.environ.get("OPENROUTER_API_KEY", "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")
+    
+    from flask import request
+    req_json = request.get_json() or {}
+    s = req_json.get('stock_data', {})
+    user_query = req_json.get('query', '請評估這隻股票的短線走勢')
+
+    if not s or 'symbol' not in s:
+        return jsonify({'success': False, 'error': '缺乏個股量化核心數據'}), 400
+
+    headers = {
+        "Authorization": f"Bearer {api_key}",
+        "HTTP-Referer": "https://stockscanner.com",
+        "Content-Type": "application/json"
+    }
+    url = "https://openrouter.ai/api/v1/chat/completions"
+
+    # 📦 數據完全體封裝：包含所有可能缺失的 None 欄位，原封不動交給 AI 拷問
+    stock_context = f"""
+    【大佬系統之即時量化實時快照】
+    股票代號: {s.get('symbol')}
+    公司名稱: {s.get('company_name', s.get('symbol'))}
+    當前股價: ${s.get('price')}
+    量化綜合總分: {s.get('score')}/15 分
+    系統量化訊號: {s.get('signal_label')}
+    營收年增率 (Rev YoY): {s.get('rev_yoy') if s.get('rev_yoy') is not None else '無數據/None'}
+    EPS年增率 (EPS YoY): {s.get('eps_yoy') if s.get('eps_yoy') is not None else '無數據/None'}
+    RS 相對強度評級: {s.get('rs_rating', '無數據')}
+    風險係數 (Beta): {s.get('beta', '無數據')}
+    系統建議止損價: {s.get('stop_loss', '無數據')}
+    系統建議目標價: {s.get('target', '無數據')}
+    當前技術指標 (RSI): {s.get('rsi', '無數據')}
+    當前技術指標 (ATR% 日均波動): {s.get('atr_pct', '無數據')}%
+    當前技術指標 (成交量倍數): {s.get('vol_mult', '無數據')}x
+    """
+
+    try:
+        # 🔥 ⚔️ ROUND 1: 技術動能官 (Llama 3 8B) 開火，尋求短線突破利多
+        p1_prompt = f"{stock_context}\n大佬提問：{user_query}\n\n任務：你是【趨勢動能官（Llama-3）】。請完全站在短線技術動能、K線趨勢突破的角度，給出短線激進的多空理由。字數 150 字內。"
+        p1_res = requests.post(url, headers=headers, json={
+            "model": "meta-llama/llama-3-8b-instruct:free", "messages": [{"role": "user", "content": p1_prompt}]
+        }).json()
+        p1_opinion = p1_res['choices'][0]['message']['content']
+
+        # 🔥 ⚔️ ROUND 2: 財報審查官 (Mistral Large Paid Flagship) 專職挑刺，拷問 None 數據空缺
+        p2_prompt = f"{stock_context}\n【動能進攻官的樂觀觀點如下】:\n{p1_opinion}\n\n任務：你是【基本面審查官（Mistral-Large旗艦級大腦）】。請針對動能官的盲目看法進行嚴厲質質疑！特別盯緊大佬數據中為 None、無數據、或是不及格的欄位，進行無情挑刺與打臉，抓出這筆交易隱藏的致命盲區。字數 200 字內。"
+        p2_res = requests.post(url, headers=headers, json={
+            "model": "mistralai/mistral-large", "messages": [{"role": "user", "content": p2_prompt}]
+        }).json()
+        p2_opinion = p2_res['choices'][0]['message']['content']
+
+        # 🔥 ⚔️ ROUND 3: 最高風控裁決官 (DeepSeek V3/R1) 聯網掃描新聞，強制達成風控共識
+        p3_prompt = f"{stock_context}\n【雙方對抗辯論紀錄】:\n動能官觀點: {p1_opinion}\n\n審查官質疑: {p2_opinion}\n\n任務：你是【最高風控裁決官（DeepSeek）】。請先啟動即時聯網搜捕該股最近的利空利多新聞、分析師評語。接著審視前兩者的激烈辯論，揪出被網路上即時新聞驗證後的邏輯漏洞。在充分考慮數據缺失帶來的未知風險後，給出一個最嚴密、包含具體倉位控制與止損防線的【最終對抗審查共識結論】。字數 300 字內。"
+        p3_res = requests.post(url, headers=headers, json={
+            "model": "deepseek/deepseek-chat", "messages": [{"role": "user", "content": p3_prompt}]
+        }).json()
+        final_consensus = p3_res['choices'][0]['message']['content']
+
+        return jsonify({
+            'success': True,
+            'p1_opinion': p1_opinion,
+            'p2_opinion': p2_opinion,
+            'final_consensus': final_consensus
+        })
+
+    except Exception as e:
+        return jsonify({'success': False, 'error': f'智囊團圓桌會議因外部網路熔斷: {str(e)}'}), 500
+
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5000))
     app.run(host='0.0.0.0', port=port, debug=False)
