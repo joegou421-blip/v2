@@ -179,26 +179,45 @@ def single_stock(ticker):
         except:
             pass
 
-        tech = get_technicals(symbol, spy_close)
-        if not tech:
-            return jsonify({'success': False, 'error': f'無法取得 {symbol} 技術數據'}), 404
+        try:
+            tech = get_technicals(symbol, spy_close)
+        except Exception as e_tech:
+            print(f"[API TECH ERR] {symbol} 技術面抓取崩潰: {e_tech}")
+            tech = None
+
+        if not tech or tech.get('price') is None:
+            return jsonify({'success': False, 'error': f'無法取得 {symbol} 即時技術面數據，請稍後重試'}), 404
 
         close_s = tech.pop('_close', None)
         try:
             fund = get_fundamentals(symbol, close_s, spy_close)
-        except:
+        except Exception as e_fund:
+            print(f"[API FUND ERR] {symbol} 基本面抓取崩潰: {e_fund}")
             fund = {'_source': 'yfinance_fallback'}
 
-        score, signal, signal_label, breakdown = score_stock(tech, fund)
-        
+        # 🚀 終極護衛防線：防止 TSLA 等超級熱門股因為財務欄位缺失導致 score_stock 算分核爆
+        try:
+            score, signal, signal_label, breakdown = score_stock(tech, fund)
+        except Exception as e_score:
+            print(f"[API SCORE CRASH] {symbol} 算分核心核爆，啟動安全防禦降維: {e_score}")
+            score = 5
+            signal = 'watch'
+            signal_label = '觀望 (財務數據異常)'
+            breakdown = {}
+
         raw_eps = fund.get('eps_yoy')
         import numpy as np
-        is_turn = bool(fund.get('turned_profitable') or (isinstance(raw_eps, (int, float)) and raw_eps < -100))
+        
+        try:
+            is_turn = bool(fund.get('turned_profitable') or (isinstance(raw_eps, (int, float)) and not np.isnan(raw_eps) and raw_eps < -100))
+        except:
+            is_turn = False
 
+        # 🛠️ 完美補齊前端詳細面板滑出所需的所有隱藏量化欄位
         result = {
             'symbol': symbol,
             'company_name': fund.get('company_name', symbol),
-            'price': tech['price'],
+            'price': tech.get('price', 0.0),
             'score': score,
             'signal': signal,
             'signal_label': signal_label,
@@ -207,13 +226,25 @@ def single_stock(ticker):
             'rev_yoy': None if (isinstance(fund.get('rev_yoy'), float) and np.isnan(fund.get('rev_yoy'))) else fund.get('rev_yoy'),
             'eps_yoy': "由虧轉盈" if is_turn else (None if (isinstance(raw_eps, float) and np.isnan(raw_eps)) else raw_eps),
             'beta': 1.0 if (fund.get('beta') is None or (isinstance(fund.get('beta'), float) and np.isnan(fund.get('beta')))) else fund.get('beta'),
-            'rs_rating': 50.0 if (tech.get('rs_rating') is None or (isinstance(tech.get('rs_rating'), float) and np.isnan(tech.get('rs_rating')))) else tech['rs_rating']
+            'rs_rating': 50.0 if (tech.get('rs_rating') is None or (isinstance(tech.get('rs_rating'), float) and np.isnan(tech.get('rs_rating')))) else tech['rs_rating'],
+            
+            # 🚀 注入核心交易面板數據，讓單股點擊後的詳細跑馬燈不漏白
+            'stop_loss': tech.get('stop_loss', '--'),
+            'target': tech.get('target', '--'),
+            'rr': tech.get('rr', '--'),
+            'industry': fund.get('industry', fund.get('sector', '美股個股')),
+            'sector': fund.get('sector', ''),
+            'atr_pct': tech.get('atr_pct', '--'),
+            'rsi': tech.get('rsi', '--'),
+            'vol_mult': tech.get('vol_mult', '--'),
+            'chase_risk': tech.get('chase_risk', False),
+            'fund_source': fund.get('_source', '?')
         }
 
         return jsonify({'success': True, 'data': result})
 
     except Exception as e:
-        print(f"[api] /stock/{symbol} error: {e}")
+        print(f"[api] /stock/{symbol} global error: {e}")
         return jsonify({'success': False, 'error': str(e)}), 500
 
 if __name__ == '__main__':

@@ -1479,42 +1479,64 @@ async function searchStock() {
             displayStockDetail(s);
         } else {
             console.warn("找不到任何標準渲染函式，啟動現場 DOM 強制通電機制！");
-            
-            content.innerHTML = `
-                ${notStage2Banner}
-                <div class="stock-detail-card" style="background: #1e1e2e; padding: 25px; border-radius: 16px; box-shadow: 0 8px 32px rgba(0,0,0,0.4); border: 1px solid #313244; color: #cdd6f4; font-family: sans-serif; margin-top: 15px; text-align: left;">
-                    <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 2px solid #45475a; padding-bottom: 15px; margin-bottom: 20px;">
-                        <div>
-                            <h2 style="margin: 0; font-size: 28px; color: #f5c2e7; letter-spacing: 1px;">${s.symbol}</h2>
-                            <small style="color: #a6adc8; font-size: 14px;">${s.company_name || '美股個股數據'}</small>
-                        </div>
-                        <div style="text-align: right;">
-                            <div style="font-size: 32px; font-weight: bold; color: #a6e3a1;">$${s.price ? s.price.toFixed(2) : '0.00'}</div>
-                            <span style="background: ${s.signal === 'buy' ? '#a6e3a1' : (s.signal === 'strong_buy' ? '#f38ba8' : '#f9e2af')}; color: #11111b; padding: 4px 12px; border-radius: 20px; font-size: 12px; font-weight: bold; text-transform: uppercase;">
-                                ${s.signal_label || '觀望'}
-                            </span>
-                        </div>
-                    </div>
-                    
-                    <div style="display: flex; justify-content: space-between; align-items: center; background: #11111b; padding: 15px; border-radius: 12px; margin-bottom: 20px; border: 1px dashed #45475a;">
-                        <span style="font-size: 16px; color: #cdd6f4; font-weight: bold;">📊 綜合量化總分：</span>
-                        <span style="font-size: 28px; font-weight: 900; color: #fab387;">${s.score} <span style="font-size: 14px; color: #a6adc8; font-weight: normal;">/ 15 分</span></span>
-                    </div>
+    
+    // 🚀 終極通電：直接將單股結果包裝成標準的 .stock-card 並綁定 onclick 點擊事件，一秒解鎖「詳細評分細目跑馬燈」！
+    const chaseHTML = s.chase_risk ? `<div class="chase-badge">⚠ 追高風險</div>` : '';
+    const displayEps = s.eps_yoy === null ? '--' : (typeof s.eps_yoy === 'number' ? (s.eps_yoy > 0 ? '+' : '') + s.eps_yoy.toFixed(1) + '%' : s.eps_yoy);
+    const displayRev = s.rev_yoy === null ? '--' : (typeof s.rev_yoy === 'number' ? (s.rev_yoy > 0 ? '+' : '') + s.rev_yoy.toFixed(1) + '%' : s.rev_yoy);
 
-                    <h3 style="font-size: 16px; color: #89b4fa; margin-bottom: 12px; border-left: 4px solid #89b4fa; padding-left: 8px; text-align: left;">📋 基本面 / 技術面清算細目</h3>
-                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; font-size: 14px; text-align: left;">
-                        <div style="background: #181825; padding: 12px; border-radius: 8px;">📈 營收年增率 (Rev YoY): <strong style="color: #f9e2af;">${s.rev_yoy !== null ? s.rev_yoy.toFixed(1) + '%' : '無數據'}</strong></div>
-                        <div style="background: #181825; padding: 12px; border-radius: 8px;">💎 EPS 年增率 (EPS YoY): <strong style="color: #f9e2af;">${typeof s.eps_yoy === 'number' ? s.eps_yoy.toFixed(1) + '%' : (s.eps_yoy || '無數據')}</strong></div>
-                        <div style="background: #181825; padding: 12px; border-radius: 8px;">⚡ 風險係數 (Beta): <strong style="color: #f9e2af;">${s.beta !== null ? s.beta.toFixed(2) : '無數據'}</strong></div>
-                        <div style="background: #181825; padding: 12px; border-radius: 8px;">🚀 RS 相對強度評級: <strong style="color: #f9e2af;">${s.rs_rating !== null ? s.rs_rating : '無數據'}</strong></div>
-                    </div>
-
-                    <div style="margin-top: 20px; background: #242535; padding: 12px; border-radius: 8px; font-size: 13px; color: #bac2de; line-height: 1.5; text-align: left;">
-                        📌 <strong>加分防禦熔斷狀態</strong>：IREN 髒數據清洗完畢。由虧轉盈機制已強制接通，已成功為此個股對齊基本面防禦，並完整補回 3 分加分管道！
-                    </div>
-                </div>
-            `;
-        }
+    content.innerHTML = `
+        ${notStage2Banner}
+        <div class="stock-card signal-${s.signal}" onclick="openDetail('${s.symbol}')" style="margin-top: 15px; text-align: left;">
+          <div class="sc-top">
+            <div class="sc-left">
+              <div class="sc-rank">搜尋結果</div>
+              <div class="sc-symbol">${s.symbol}</div>
+              <div class="sc-name">${s.company_name || ''}</div>
+              <div class="sc-industry">${s.industry || s.sector || ''}</div>
+            </div>
+            <div class="sc-right">
+              <div class="sc-score">${s.score}<span class="sc-score-max">/15</span></div>
+              <div class="signal-badge signal-${s.signal}">${s.signal_label}</div>
+            </div>
+          </div>
+          <div class="sc-stats">
+            <div class="sc-stat-item">
+              <div class="sc-stat-label">EPS增長</div>
+              <div class="sc-stat-value" style="color:${s.eps_yoy==null?'var(--text3)':(typeof s.eps_yoy==='number'&&s.eps_yoy>0?'var(--green)':'var(--red)')}">${displayEps}</div>
+            </div>
+            <div class="sc-stat-item">
+              <div class="sc-stat-label">收入增長</div>
+              <div class="sc-stat-value" style="color:${s.rev_yoy==null?'var(--text3)':(typeof s.rev_yoy==='number'&&s.rev_yoy>0?'var(--green)':'var(--red)')}">${displayRev}</div>
+            </div>
+            <div class="sc-stat-item">
+              <div class="sc-stat-label">RS評級</div>
+              <div class="sc-stat-value" style="color:${s.rs_rating >= 80 ? 'var(--green)' : s.rs_rating >= 60 ? 'var(--yellow)' : 'var(--text2)'}">${s.rs_rating != null ? s.rs_rating : '--'}</div>
+            </div>
+            <div class="sc-stat-item">
+              <div class="sc-stat-label">Beta</div>
+              <div class="sc-stat-value">${(s.beta != null) ? Number(s.beta).toFixed(2) : '--'}</div>
+            </div>
+          </div>
+          <div class="sc-trade">
+            <div class="sc-trade-item">
+              <div class="sc-trade-label">止損</div>
+              <div class="sc-trade-value stop">${s.stop_loss || '--'}</div>
+            </div>
+            <div class="sc-trade-item">
+              <div class="sc-trade-label">目標</div>
+              <div class="sc-trade-value target">${s.target || '--'}</div>
+            </div>
+            <div class="sc-trade-item">
+              <div class="sc-trade-label">R:R</div>
+              <div class="sc-trade-value rr">${s.rr && s.rr !== '--' ? '1:'+s.rr : '--'}</div>
+            </div>
+          </div>
+          ${chaseHTML}
+        </div>
+        <p style="text-align:center; font-size:12px; color:var(--text2); margin-top:12px;">💡 提示：點擊上方字卡即可滑出完整 15 項加分清算細目！</p>
+    `;
+}
         showToast(`${symbol} 評分完成`, "success");
     } else {
         content.innerHTML = `
