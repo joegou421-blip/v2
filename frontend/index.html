@@ -970,6 +970,29 @@ body.regime-no_data  .regime-tint-bar { background: #444; }
     </div>
   </div>
 
+<div class="page" id="page-aidebate">
+    <div class="section-title">🤖 AI 圓桌會 · 獨立決策主控台</div>
+    <div class="breakdown-list" style="padding:16px; background:var(--bg3); border:1px solid var(--border2); border-radius:14px; margin-bottom:16px;">
+      <div style="margin-bottom:12px;">
+        <label style="font-size:11px; color:var(--text2); display:block; margin-bottom:4px; font-weight:bold;">1. 輸入股票代號</label>
+        <input type="text" id="pageAiSymbol" placeholder="例如: IREN, TSLA, AAPL" style="width:100%; background:var(--bg); border:1px solid var(--border2); padding:12px; border-radius:8px; color:var(--text); font-family:'Space Mono', monospace; text-transform:uppercase; outline:none; font-size:14px;">
+      </div>
+      <div style="margin-bottom:16px;">
+        <label style="font-size:11px; color:var(--text2); display:block; margin-bottom:4px; font-weight:bold;">2. 輸入多空提問 / 質詢策略方向</label>
+        <input type="text" id="pageAiQuery" placeholder="例如：看短線利多、有利空新聞嗎？、適合現價進場嗎？" style="width:100%; background:var(--bg); border:1px solid var(--border2); padding:12px; border-radius:8px; color:var(--text); outline:none; font-size:13px;">
+      </div>
+      <button onclick="triggerPageAiDebate()" id="pageAiBtn" style="width:100%; background:linear-gradient(135deg, var(--accent2), var(--accent)); color:#fff; border:none; padding:12px; border-radius:10px; font-weight:bold; cursor:pointer; font-size:14px; letter-spacing:0.05em;">
+        點火圓桌會審
+      </button>
+    </div>
+    
+    <div class="breakdown-list" style="padding:16px; background:var(--bg2); min-height:220px; border-radius:14px; border-color:var(--border2);">
+      <div id="pageAiDisplay" style="font-size:13px; line-height:1.6;">
+          <p style="color:var(--text3); text-align:center; padding-top:60px;">💡 提示：輸入代號與策略方向，點火召喚開源三巨頭在獨立視窗展開激烈互咬壓力測試！</p>
+      </div>
+    </div>
+  </div>
+
   <nav class="nav">
     <button class="nav-item active" onclick="switchPage('market', this)">
       <svg viewBox="0 0 24 24"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
@@ -982,6 +1005,11 @@ body.regime-no_data  .regime-tint-bar { background: #444; }
     <button class="nav-item" onclick="switchPage('search', this)">
       <svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
       搜索
+    </button>
+
+<button class="nav-item" onclick="switchPage('aidebate', this)">
+      <svg viewBox="0 0 24 24"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+      AI 圓桌會
     </button>
   </nav>
 
@@ -1420,76 +1448,63 @@ function openDetail(symbol) {
       <div class="breakdown-item"><div class="bi-left"><div class="bi-icon pass">⚡</div><div><div class="bi-label">Beta（市場敏感度）</div></div></div><div class="bi-points">${(stock.beta != null && stock.beta !== undefined) ? Number(stock.beta).toFixed(2) : '--'}</div></div>
    </div>
 
-    <div class="section-title" style="margin-top:25px; color:var(--accent);">🤖 AI 圓桌會 · 跨平台對抗審查</div>
-    <div class="breakdown-list" style="padding:16px; background:var(--bg2); border-color:var(--accent);">
-      <div id="aiDebateDisplay" style="font-size:13px; line-height:1.6;">
-          <p style="color:var(--text3); text-align:center;">💡 提示：在下方輸入你想詢問的方向（如：看短線、有利空新聞嗎？），點火啟動開源三巨頭互咬壓力測試！</p>
-      </div>
-      
-      <div style="display:flex; gap:8px; margin-top:15px; border-top:1px solid var(--border); padding-top:12px;">
-        <input type="text" id="aiQueryInput" placeholder="例如：看短線、有什麼分析師評語、適合現價進嗎？" 
-               style="flex:1; background:var(--bg3); border:1px solid var(--border2); padding:10px; border-radius:8px; color:var(--text); outline:none; font-size:13px;">
-        <button onclick="triggerAiDebate('${stock.symbol}')" id="aiDebateBtn"
-                style="background:var(--accent); color:#fff; border:none; padding:10px 16px; border-radius:8px; font-weight:bold; cursor:pointer; font-size:13px; white-space:nowrap;">
-          點火會審
-        </button>
-      </div>
-    </div>
+    
   `;
 
   document.getElementById('detailView').classList.add('open');
 }
 
-// 🚀 跨平台開源 AI 圓桌會對抗核心發射管線
-async function triggerAiDebate(symbol) {
-  let stock = currentResults.find(s => s.symbol === symbol);
-  if(!stock && window._searchResult && window._searchResult.symbol === symbol) stock = window._searchResult;
-  if(!stock) return;
-
-  const input = document.getElementById('aiQueryInput');
-  const btn = document.getElementById('aiDebateBtn');
-  const display = document.getElementById('aiDebateDisplay');
-  const query = input.value.trim() || "請評估這隻股票的短線走勢與最新新聞";
-
+// 🚀 獨立頁面專屬：跨平台開源 AI 圓桌會核心發射管線
+async function triggerPageAiDebate() {
+  const symInput = document.getElementById('pageAiSymbol');
+  const queryInput = document.getElementById('pageAiQuery');
+  const btn = document.getElementById('pageAiBtn');
+  const display = document.getElementById('pageAiDisplay');
+  
+  const symbol = symInput.value.trim().toUpperCase();
+  const query = queryInput.value.trim() || "請評估這隻股票的短線走勢與最新新聞";
+  
+  if(!symbol) { showToast('請輸入股票代號'); return; }
+  
   btn.disabled = true;
-  btn.textContent = "辯論進行中...";
+  btn.textContent = "智囊團激烈辯論中...";
   display.innerHTML = `
-    <div style="text-align:center; padding:20px; color:var(--text2);">
+    <div style="text-align:center; padding:40px; color:var(--text2);">
       <div class="spinner" style="margin:0 auto 10px;"></div>
-      🔥 開源智囊團（Llama3 + Mistral + DeepSeek）正在針對最新新聞與數據空缺展開獵巫式撕咬...
+      🔥 智囊團正在針對 ${symbol} 進行跨平台聯網新聞搜捕與硬核基本面壓力質詢...
     </div>`;
-
+    
   try {
       const res = await fetch(`${API_BASE}/api/scan/ai_debate`, {
           method: 'POST',
           headers: {'Content-Type': 'application/json'},
-          body: JSON.stringify({ stock_data: stock, query: query })
+          body: JSON.stringify({ symbol: symbol, query: query })
       });
       const json = await res.json();
       
       if(json.success) {
           display.innerHTML = `
-              <div style="margin-bottom:12px; background:#0f172a; padding:12px; border-radius:8px; border-left:4px solid var(--signal-buy);">
-                  <strong style="color:var(--signal-buy);">🚀 【趨勢動能官 · Llama 3】:</strong>
-                  <p style="margin-top:6px; color:var(--text); font-size:12.5px;">${json.p1_opinion}</p>
+              <div style="margin-bottom:14px; background:#0f172a; padding:12px; border-radius:8px; border-left:4px solid var(--signal-buy);">
+                  <strong style="color:var(--signal-buy); font-size:13px;">🚀 【趨勢動能官 · Llama 3】:</strong>
+                  <p style="margin-top:6px; color:var(--text); font-size:12.5px; line-height:1.6;">${json.p1_opinion}</p>
               </div>
-              <div style="margin-bottom:12px; background:#1c1018; padding:12px; border-radius:8px; border-left:4px solid var(--red);">
-                  <strong style="color:var(--red);">🔮 【基本面刺客 · Mistral Large】(嚴厲質疑數據空缺):</strong>
-                  <p style="margin-top:6px; color:var(--text); font-size:12.5px;">${json.p2_opinion}</p>
+              <div style="margin-bottom:14px; background:#1c1018; padding:12px; border-radius:8px; border-left:4px solid var(--red);">
+                  <strong style="color:var(--red); font-size:13px;">🔮 【基本面刺客 · Mistral Large】(嚴厲質詢):</strong>
+                  <p style="margin-top:6px; color:var(--text); font-size:12.5px; line-height:1.6;">${json.p2_opinion}</p>
               </div>
               <div style="background:#131124; padding:14px; border-radius:8px; border:1px solid var(--accent); box-shadow: 0 0 15px rgba(124,106,247,0.15);">
-                  <strong style="color:var(--yellow);">👑 【最高風控裁決官 · DeepSeek】(聯網新聞與情報共識):</strong>
+                  <strong style="color:var(--yellow); font-size:13px;">👑 【最高風控裁決官 · DeepSeek】(聯網新聞與情報共識結論):</strong>
                   <p style="margin-top:8px; color:var(--text); font-weight:500; font-size:13px; line-height:1.65;">${json.final_consensus}</p>
               </div>
           `;
       } else {
-          display.innerHTML = `<p style="color:var(--red); text-align:center; font-size:13px;">⚠️ 會議中斷：${json.error}</p>`;
+          display.innerHTML = `<p style="color:var(--red); text-align:center; font-size:13px; padding-top:40px;">⚠️ 會議中斷：${json.error}</p>`;
       }
   } catch(e) {
-      display.innerHTML = `<p style="color:var(--red); text-align:center; font-size:13px;">🌐 連線失敗，請確認後端 OpenRouter 機制是否正常運作。</p>`;
+      display.innerHTML = `<p style="color:var(--red); text-align:center; font-size:13px; padding-top:40px;">🌐 連線失敗，請確認後端服務是否正常存活。</p>`;
   } finally {
       btn.disabled = false;
-      btn.textContent = "點火會審";
+      btn.textContent = "點火圓桌會審";
   }
 }
 
