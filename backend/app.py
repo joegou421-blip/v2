@@ -248,7 +248,6 @@ def ai_debate():
     symbol = req_json.get('symbol', '').upper().strip()
     user_query = req_json.get('query', '請評估這隻股票的短線走勢')
 
-    # 🚀 核心升級：如果只收到股票代號，後端自動在背景發動「即時量化快照」，1秒生出小抄！
     if (not s or 'symbol' not in s) and symbol:
         try:
             from scanner import get_technicals, get_fundamentals, score_stock
@@ -278,7 +277,7 @@ def ai_debate():
         return jsonify({'success': False, 'error': f'系統目前無法即時撈取代號「{symbol or "未知"}」的量化財報數據，請稍後重試。'}), 400
 
     if not api_key:
-        return jsonify({'success': False, 'error': '後端雲端尚未配置有效金鑰，請至 Render 設定環境變數。'}), 400
+        return jsonify({'success': False, 'error': '後端環境變數未偵測到有效 OpenRouter 金鑰。'}), 400
 
     headers = {
         "Authorization": f"Bearer {api_key}",
@@ -306,21 +305,21 @@ def ai_debate():
     """
 
     try:
-        # 🔥 ROUND 1: Llama 3 8B
+        # 🔥 ROUND 1: 升級為 Meta 官方 Llama 3 付費旗艦高速通道（徹底拔除 :free 尾巴，告別 404）
         p1_prompt = f"{stock_context}\n大佬提問：{user_query}\n\n任務：你是【趨勢動能官（Llama-3）】。請完全站在短線技術動能、K線趨勢突破的角度，給出短線激進的多空理由。字數 150 字內。"
-        r1 = requests.post(url, headers=headers, json={"model": "meta-llama/llama-3-8b-instruct:free", "messages": [{"role": "user", "content": p1_prompt}]}).json()
+        r1 = requests.post(url, headers=headers, json={"model": "meta-llama/llama-3-8b-instruct", "messages": [{"role": "user", "content": p1_prompt}]}).json()
         if 'choices' not in r1:
-            return jsonify({'success': False, 'error': f"Llama3 通道擁堵。OpenRouter 回傳: {r1.get('error', r1)}"}), 500
+            return jsonify({'success': False, 'error': f"Llama3 通道回應異常。OpenRouter 回傳: {r1.get('error', r1)}"}), 500
         p1_opinion = r1['choices'][0]['message']['content']
 
-        # 🔥 ROUND 2: Mistral Large
+        # 🔥 ROUND 2: Mistral Large 高階旗艦大腦
         p2_prompt = f"{stock_context}\n【動能進攻官的樂觀觀點如下】:\n{p1_opinion}\n\n任務：你是【基本面審查官（Mistral-Large旗艦級大腦）】。請針對動能官的盲目看法進行嚴厲質質疑！特別盯緊大佬數據中為 None、無數據、或是不及格的欄位，進行無情挑刺與打臉，抓出這筆交易隱藏的致命盲區。字數 200 字內。"
         r2 = requests.post(url, headers=headers, json={"model": "mistralai/mistral-large", "messages": [{"role": "user", "content": p2_prompt}]}).json()
         if 'choices' not in r2:
             return jsonify({'success': False, 'error': f"Mistral 大腦連線失敗。OpenRouter 回傳: {r2.get('error', r2)}"}), 500
         p2_opinion = r2['choices'][0]['message']['content']
 
-        # 🔥 ROUND 3: DeepSeek V3/R1
+        # 🔥 ROUND 3: DeepSeek V3/R1 硬核核心
         p3_prompt = f"{stock_context}\n【雙方對抗辯論紀錄】:\n動能官觀點: {p1_opinion}\n\n審查官質疑: {p2_opinion}\n\n任務：你是【最高風控裁決官（DeepSeek）】。請先啟動即時聯網搜捕該股最近的利空利多新聞、分析師評語。接著審視前兩者的激烈辯論，揪出被網路上即時新聞驗證後的邏輯漏洞。在充分考慮數據缺失帶來的未知風險後，給出一個最嚴密、包含具體倉位控制與止損防線的【最終對抗審查共識結論】。字數 300 字內。"
         r3 = requests.post(url, headers=headers, json={"model": "deepseek/deepseek-chat", "messages": [{"role": "user", "content": p3_prompt}]}).json()
         if 'choices' not in r3:
@@ -336,7 +335,6 @@ def ai_debate():
 
     except Exception as e:
         return jsonify({'success': False, 'error': f'智囊團圓桌會議故障: {str(e)}'}), 500
-
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5000))
     app.run(host='0.0.0.0', port=port, debug=False)
