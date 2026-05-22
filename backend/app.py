@@ -215,6 +215,7 @@ def single_stock(ticker):
                 print(f"[*] 主搜尋路由啟動備援：yfinance 遭封鎖，正在調用 Alpha Vantage 載入 {symbol}...")
                 url = f"https://www.alphavantage.co/query?function=GLOBAL_QUOTE&symbol={symbol}&apikey={av_key}"
                 res = requests.get(url, timeout=10).json()
+print(f"【DEBUG】Alpha Vantage 伺服器真實回傳內容：{res}", flush=True)
                 quote = res.get("Global Quote", {})
                 if quote and "05. price" in quote:
                     price_val = float(quote["05. price"])
