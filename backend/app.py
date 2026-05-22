@@ -441,7 +441,7 @@ RSI: {s.get('rsi', 'N/A')} | ATR%: {s.get('atr_pct', 'N/A')}% | 量能倍數: {s
 
     try:
         r4 = requests.post(or_url, headers=headers, json={
-            "model": "anthropic/claude-sonnet-4-5",
+            "model": "google/gemini-2.0-flash-001",
             "messages": [{"role": "user", "content": judge_prompt}]
         }, timeout=45).json()
 
