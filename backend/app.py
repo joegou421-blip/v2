@@ -234,107 +234,257 @@ def single_stock(ticker):
         print(f"[api] /stock/{symbol} global error: {e}")
         return jsonify({'success': False, 'error': str(e)}), 500
 
-# ─── 🤖 AI MULTI-AGENT ADVERSARIAL DEBATE ROUNDTABLE (動態對齊 + 繁中鎖死版) ───
+# ─── 🤖 AI MULTI-AGENT INTELLIGENCE ROUNDTABLE v2 ───
+# 4 個 Agent 各司其職，並行搜索，最後由 Claude 整合
+# Agent 1: 新聞情報官 (Perplexity - 真實聯網)
+# Agent 2: 機構動向官 (Perplexity - 真實聯網)
+# Agent 3: 財報深度官 (DeepSeek - 分析量化數據)
+# Agent 4: 總裁判官   (Claude Sonnet - 整合三方結論)
+
 @app.route('/api/scan/ai_debate', methods=['POST', 'GET'])
 def ai_debate():
     import os, requests
+    from concurrent.futures import ThreadPoolExecutor, as_completed
+
     api_key = os.environ.get("OPENROUTER_API_KEY", "")
-    
+
     if request.method == 'GET':
         return jsonify({'success': False, 'error': 'AI 圓桌會後端管線通電正常！'})
 
     req_json = request.get_json() or {}
     s = req_json.get('stock_data', {})
     symbol = req_json.get('symbol', '').upper().strip()
-    user_query = req_json.get('query', '請評估這隻股票的短線走勢與最新動態')
+    user_query = req_json.get('query', '請評估這隻股票目前的進場時機與潛在風險')
 
+    # ── 背景抓取量化數據（如果前端沒傳）──
     if (not s or 'symbol' not in s) and symbol:
         try:
-            from scanner import get_technicals, get_fundamentals, score_stock
+            from scanner import get_technicals, get_fundamentals, score_stock, get_spy
             spy_close = 400.0
             try:
-                from scanner import get_spy
                 spy_close = get_spy()['close']
-            except: pass
+            except:
+                pass
             tech = get_technicals(symbol, spy_close)
             if tech and tech.get('price') is not None:
                 close_s = tech.pop('_close', None)
-                try: fund = get_fundamentals(symbol, close_s, spy_close)
-                except: fund = {}
+                try:
+                    fund = get_fundamentals(symbol, close_s, spy_close)
+                except:
+                    fund = {}
                 score, signal, signal_label, breakdown = score_stock(tech, fund)
                 s = {
-                    'symbol': symbol, 'company_name': fund.get('company_name', symbol),
-                    'price': tech.get('price'), 'score': score, 'signal_label': signal_label,
-                    'rev_yoy': fund.get('rev_yoy'), 'eps_yoy': fund.get('eps_yoy'),
-                    'beta': fund.get('beta'), 'rs_rating': tech.get('rs_rating'),
-                    'stop_loss': tech.get('stop_loss'), 'target': tech.get('target'),
-                    'rsi': tech.get('rsi'), 'atr_pct': tech.get('atr_pct'), 'vol_mult': tech.get('vol_mult')
+                    'symbol': symbol,
+                    'company_name': fund.get('company_name', symbol),
+                    'price': tech.get('price'),
+                    'score': score,
+                    'signal_label': signal_label,
+                    'rev_yoy': fund.get('rev_yoy'),
+                    'eps_yoy': fund.get('eps_yoy'),
+                    'beta': fund.get('beta'),
+                    'rs_rating': tech.get('rs_rating'),
+                    'stop_loss': tech.get('stop_loss'),
+                    'target': tech.get('target'),
+                    'rsi': tech.get('rsi'),
+                    'atr_pct': tech.get('atr_pct'),
+                    'vol_mult': tech.get('vol_mult'),
+                    'sector': fund.get('sector', ''),
+                    'market_cap': fund.get('market_cap', 0),
                 }
         except Exception as err:
             print(f"[AI DEBATE BACKGROUND LOOKUP ERR] {symbol}: {err}")
 
     if not s or 'symbol' not in s:
-        return jsonify({'success': False, 'error': f'系統目前無法即時撈取代號「{symbol or "未知"}」的量化財報數據，請稍後重試。'}), 400
+        return jsonify({'success': False, 'error': f'無法取得「{symbol or "未知"}」的量化數據，請稍後重試。'}), 400
 
     if not api_key:
-        return jsonify({'success': False, 'error': '後端環境變數未偵測到有效 OpenRouter 金鑰。'}), 400
+        return jsonify({'success': False, 'error': '未設定 OPENROUTER_API_KEY。'}), 400
 
     headers = {
         "Authorization": f"Bearer {api_key}",
         "HTTP-Referer": "https://stockscanner.com",
         "Content-Type": "application/json"
     }
-    url = "https://openrouter.ai/api/v1/chat/completions"
+    or_url = "https://openrouter.ai/api/v1/chat/completions"
 
+    # ── 量化快照（所有 Agent 共用）──
     stock_context = f"""
-    【大佬系統之即時量化實時快照】
-    股票代號: {s.get('symbol')}
-    公司名稱: {s.get('company_name', s.get('symbol'))}
-    當前股價: ${s.get('price')}
-    量化綜合總分: {s.get('score')}/15 分
-    系統量化訊號: {s.get('signal_label')}
-    營收年增率 (Rev YoY): {s.get('rev_yoy') if s.get('rev_yoy') is not None else '無數據/None'}
-    EPS年增率 (EPS YoY): {s.get('eps_yoy') if s.get('eps_yoy') is not None else '無數據/None'}
-    RS 相對強度評級: {s.get('rs_rating', '無數據')}
-    風險係數 (Beta): {s.get('beta', '無數據')}
-    系統建議止損價: {s.get('stop_loss', '無數據')}
-    系統建議目標價: {s.get('target', '無數據')}
-    當前技術指標 (RSI): {s.get('rsi', '無數據')}
-    當前技術指標 (ATR% 日均波動): {s.get('atr_pct', '無數據')}%
-    當前技術指標 (成交量倍數): {s.get('vol_mult', '無數據')}x
-    """
+【股票量化快照】
+代號: {s.get('symbol')} | 公司: {s.get('company_name', s.get('symbol'))}
+股價: ${s.get('price')} | 板塊: {s.get('sector', '未知')}
+系統評分: {s.get('score')}/15 | 訊號: {s.get('signal_label')}
+EPS年增率: {s.get('eps_yoy') if s.get('eps_yoy') is not None else 'N/A'}%
+營收年增率: {s.get('rev_yoy') if s.get('rev_yoy') is not None else 'N/A'}%
+RS評級: {s.get('rs_rating', 'N/A')} | Beta: {s.get('beta', 'N/A')}
+RSI: {s.get('rsi', 'N/A')} | ATR%: {s.get('atr_pct', 'N/A')}% | 量能倍數: {s.get('vol_mult', 'N/A')}x
+止損: ${s.get('stop_loss', 'N/A')} | 目標: ${s.get('target', 'N/A')}
+【用戶問題】: {user_query}
+"""
+
+    # ── 定義四個 Agent ──
+
+    def agent_news():
+        """新聞情報官：搜索最新新聞與催化劑（真實聯網）"""
+        prompt = f"""{stock_context}
+
+你是【新聞情報官】，任務是搜索並報告最新市場情報。
+請立即聯網搜索以下資訊：
+1. {s.get('symbol')} 最近 2 週的重大新聞（財報發布、產品發布、併購、監管）
+2. 即將到來的催化劑（下次財報日期、重要活動）
+3. 最新的市場情緒與板塊趨勢
+
+⚠️ 只報告你搜索到的真實資訊，沒有搜索到的不要捏造。
+必須用繁體中文回答，字數 150 字內。"""
+        r = requests.post(or_url, headers=headers, json={
+            "model": "perplexity/llama-3.1-sonar-large-128k-online",
+            "messages": [{"role": "user", "content": prompt}]
+        }, timeout=30).json()
+        if 'choices' not in r:
+            return None, f"新聞情報官異常: {r.get('error', {}).get('message', str(r))}"
+        return r['choices'][0]['message']['content'], None
+
+    def agent_institution():
+        """機構動向官：搜索分析師評級與機構動向（真實聯網）"""
+        prompt = f"""{stock_context}
+
+你是【機構動向官】，任務是搜索華爾街機構的最新動向。
+請立即聯網搜索以下資訊：
+1. 最近 30 天內分析師評級變化（升評/降評/維持）
+2. 機構目標價調整（調升/調降）
+3. 大型機構或對沖基金最新持倉變化（如有公開資訊）
+
+⚠️ 只報告你搜索到的真實資訊，沒有搜索到的不要捏造。
+必須用繁體中文回答，字數 150 字內。"""
+        r = requests.post(or_url, headers=headers, json={
+            "model": "perplexity/llama-3.1-sonar-large-128k-online",
+            "messages": [{"role": "user", "content": prompt}]
+        }, timeout=30).json()
+        if 'choices' not in r:
+            return None, f"機構動向官異常: {r.get('error', {}).get('message', str(r))}"
+        return r['choices'][0]['message']['content'], None
+
+    def agent_fundamental():
+        """財報深度官：深度解讀量化財務數據"""
+        prompt = f"""{stock_context}
+
+你是【財報深度官】，任務是深度解讀量化財務數據的健康程度。
+請基於上方快照數據分析：
+1. EPS 與營收趨勢是加速還是減速？這個增長率在同板塊中是否有競爭力？
+2. RS評級 {s.get('rs_rating', 'N/A')} 代表這隻股票相對大盤的強弱如何？
+3. Beta {s.get('beta', 'N/A')} 在當前市況下，波動風險是否可控？
+4. 從財務角度，這隻股票的基本面能否支撐技術面的突破持續性？
+
+必須用繁體中文回答，字數 200 字內。給出明確的「財務支撐強/中/弱」結論。"""
+        r = requests.post(or_url, headers=headers, json={
+            "model": "deepseek/deepseek-chat",
+            "messages": [{"role": "user", "content": prompt}]
+        }, timeout=30).json()
+        if 'choices' not in r:
+            return None, f"財報深度官異常: {r.get('error', {}).get('message', str(r))}"
+        return r['choices'][0]['message']['content'], None
+
+    # ── 並行執行三個 Agent ──
+    news_opinion = institution_opinion = fundamental_opinion = None
+    errors = []
+
+    with ThreadPoolExecutor(max_workers=3) as executor:
+        futures = {
+            executor.submit(agent_news): 'news',
+            executor.submit(agent_institution): 'institution',
+            executor.submit(agent_fundamental): 'fundamental',
+        }
+        for future in as_completed(futures):
+            agent_name = futures[future]
+            try:
+                result, err = future.result()
+                if err:
+                    errors.append(err)
+                    result = f"（此 Agent 數據獲取失敗：{err}）"
+                if agent_name == 'news':
+                    news_opinion = result
+                elif agent_name == 'institution':
+                    institution_opinion = result
+                elif agent_name == 'fundamental':
+                    fundamental_opinion = result
+            except Exception as e:
+                errors.append(f"{agent_name}: {str(e)}")
+
+    # ── Agent 4：總裁判官整合三方結論 ──
+    judge_prompt = f"""{stock_context}
+
+你是【總裁判官】，你已收到三位專家的獨立分析報告：
+
+📰 【新聞情報官報告】:
+{news_opinion or '數據獲取失敗'}
+
+🏦 【機構動向官報告】:
+{institution_opinion or '數據獲取失敗'}
+
+📊 【財報深度官報告】:
+{fundamental_opinion or '數據獲取失敗'}
+
+任務：整合以上三份報告，針對用戶問題「{user_query}」給出最終裁決。
+
+請按以下格式回答：
+
+**✅ 支撐進場的理由**（列出 2-3 點最強的支撐因素）
+
+**⚠️ 需要注意的風險**（列出 2-3 點最關鍵的風險）
+
+**📋 最終裁決**
+給出「強力支撐 / 基本支撐 / 中性觀望 / 建議迴避」四選一結論，並說明理由。
+
+**🛡️ 風控建議**
+根據止損 ${s.get('stop_loss', 'N/A')} 與目標 ${s.get('target', 'N/A')}，給出倉位控制建議。
+
+必須用繁體中文回答，字數 300 字內。"""
 
     try:
-        # 🔥 ROUND 1: 趨勢動能官 (強制綁定提問 + 鎖死繁體中文)
-        p1_prompt = f"{stock_context}\n\n🚨 大佬當前的核心提問是：【{user_query}】\n\n任務：你是【趨勢動能官（Llama-3）】。請針對大佬提出的具體問題，完全從短線技術動能、K線趨勢突破與市場情緒的角度，給出最直接的正面解答與進攻性理由。警告：你必須完全使用「繁體中文」回答，絕對不允許吐出任何英文段落！字數 150 字內。"
-        r1 = requests.post(url, headers=headers, json={"model": "meta-llama/llama-3-8b-instruct", "messages": [{"role": "user", "content": p1_prompt}]}).json()
-        if 'choices' not in r1:
-            return jsonify({'success': False, 'error': f"Llama3 通道異常: {r1.get('error', r1)}"}), 500
-        p1_opinion = r1['choices'][0]['message']['content']
+        r4 = requests.post(or_url, headers=headers, json={
+            "model": "anthropic/claude-sonnet-4-5",
+            "messages": [{"role": "user", "content": judge_prompt}]
+        }, timeout=45).json()
 
-        # 🔥 ROUND 2: 基本面刺客 (動態追擊質詢)
-        p2_prompt = f"{stock_context}\n\n🚨 大佬的核心提問是：【{user_query}】\n【動能官針對該提問的樂觀看法如下】:\n{p1_opinion}\n\n任務：你是【基本面審查官（Mistral-Large旗艦級大腦）】。請針對大佬的提問，並嚴厲推翻動能官的盲目看法！特別盯緊量化快照數據中為 None 或不及格的財務缺陷，從財報、估值盲區、以及個股防禦性的視角進行無情打臉與刺客式質詢。必須完全使用「繁體中文」回答！字數 200 字內。"
-        r2 = requests.post(url, headers=headers, json={"model": "mistralai/mistral-large", "messages": [{"role": "user", "content": p2_prompt}]}).json()
-        if 'choices' not in r2:
-            return jsonify({'success': False, 'error': f"Mistral 大腦異常: {r2.get('error', r2)}"}), 500
-        p2_opinion = r2['choices'][0]['message']['content']
+        if 'choices' not in r4:
+            return jsonify({'success': False, 'error': f"總裁判官異常: {r4.get('error', {}).get('message', str(r4))}"}), 500
 
-        # 🔥 ROUND 3: 最高風控裁決官 (聯網肉搜精準大過濾)
-        p3_prompt = f"{stock_context}\n\n🚨 大佬最核心想知道的是：【{user_query}】\n\n【前兩位軍師的激烈辯論紀錄】:\n動能官觀點: {p1_opinion}\n審查官質疑: {p2_opinion}\n\n任務：你是【最高風控裁決官（DeepSeek）】。請立刻啟動即時聯網，**重點肉搜捕網路上關於大佬提問的最新情報（例如：華爾街投行最新分析師評級變更、外資目標價調升/調降報告、最新的實時利多利空新聞）**。接著結合前兩位軍師的辯論與你剛剛抓到的最新聯網情報，揪出邏輯漏洞，給出一個最正面回答大佬問題、且包含嚴格倉位控制與止損防線的【最終對抗審查共識結論】。必須完全使用「繁體中文」回答！字數 300 字內。"
-        r3 = requests.post(url, headers=headers, json={"model": "deepseek/deepseek-chat", "messages": [{"role": "user", "content": p3_prompt}]}).json()
-        if 'choices' not in r3:
-            return jsonify({'success': False, 'error': f"DeepSeek 大腦異常: {r3.get('error', r3)}"}), 500
-        final_consensus = r3['choices'][0]['message']['content']
+        final_verdict = r4['choices'][0]['message']['content']
 
         return jsonify({
             'success': True,
-            'p1_opinion': p1_opinion,
-            'p2_opinion': p2_opinion,
-            'final_consensus': final_consensus
+            'agents': {
+                'news': {
+                    'label': '📰 新聞情報官',
+                    'model': 'Perplexity (聯網)',
+                    'content': news_opinion
+                },
+                'institution': {
+                    'label': '🏦 機構動向官',
+                    'model': 'Perplexity (聯網)',
+                    'content': institution_opinion
+                },
+                'fundamental': {
+                    'label': '📊 財報深度官',
+                    'model': 'DeepSeek',
+                    'content': fundamental_opinion
+                },
+                'judge': {
+                    'label': '⚖️ 總裁判官',
+                    'model': 'Claude Sonnet',
+                    'content': final_verdict
+                }
+            },
+            # 向下兼容舊版前端字段
+            'p1_opinion': news_opinion,
+            'p2_opinion': institution_opinion,
+            'p3_opinion': fundamental_opinion,
+            'final_consensus': final_verdict,
+            'errors': errors if errors else None
         })
 
     except Exception as e:
-        return jsonify({'success': False, 'error': f'智囊團圓桌會議故障: {str(e)}'}), 500
+        return jsonify({'success': False, 'error': f'總裁判官故障: {str(e)}'}), 500
+
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5000))
     app.run(host='0.0.0.0', port=port, debug=False)
