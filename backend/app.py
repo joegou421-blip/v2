@@ -253,7 +253,7 @@ def single_stock(ticker):
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 500
 
-# ─── ⚖️ 2-COMPONENT ULTRA-LEAN QUANT SYSTEM (雙拼對齊歸位版) ───
+# ─── ⚖️ 2-COMPONENT ULTRA-LEAN QUANT SYSTEM (三大數據源精準修訂版) ───
 @app.route('/api/scan/ai_debate', methods=['POST', 'GET'])
 def ai_debate():
     import os
@@ -334,15 +334,15 @@ RS相對強度評級: {s.get('rs_rating') if s.get('rs_rating') is not None else
     p1_opinion = "（前線情報獲取失敗）"
     p2_opinion = "（前線情報獲取失敗）"
     
-    # 📰 核心突破：一發 Perplexity 抓取雙維度，並強制使用物理分隔符
     try:
+        # 🎯 機構動向官 Prompt 物理改造：精準注入 2026 爆破指令與三大付費級權威數據源
         search_prompt = f"""{stock_context}
 任務：你是【實時情報官】。請立即聯網搜索該股最新情報。
 你必須嚴格將回答分為以下兩部分，並在兩部分之間精準且單獨插入一行分隔符「===SPLIT_HERE===」：
 
 第一部分：該股最近 2 週的重大真實新聞公告與即將到來的財報/法說會等重大催化劑與市場情緒。
 ===SPLIT_HERE===
-第二部分：華爾街各大分析師最近 30 天對該股的最新評級變動（升評/降評）與最新目標價調整實況。
+第二部分：請精準搜索「{s.get('symbol')} analyst consensus rating 2026」。找出目前華爾街對該股的 Buy/Hold/Sell 分析師人數比例、最新共識目標價（Consensus Price Target），以及最近有哪些券商（Brokers）調整過評級與具體數值。來源請優先參考並採信 MarketBeat、TipRanks、Tickernerd 的公開數據。
 
 請剔除情緒水分，僅回報客觀事實。必須用繁體中文回答，兩部分總字數控制在 300 字內。"""
         
@@ -364,7 +364,7 @@ RS相對強度評級: {s.get('rs_rating') if s.get('rs_rating') is not None else
                 p2_opinion = parts[1].strip()
             else:
                 p1_opinion = full_content
-                p2_opinion = "（數據已併入第一部分輸出）"
+                p2_opinion = "（數據已自動整合輸出）"
         else:
             p1_opinion = f"（網絡情報獲取失敗：{r_info.get('error', {}).get('message', str(r_info))}）"
             p2_opinion = "（未取得機構動向數據）"
@@ -380,11 +380,11 @@ RS相對強度評級: {s.get('rs_rating') if s.get('rs_rating') is not None else
 📰 【實時新聞與催化劑情報】:
 {p1_opinion}
 
-🏦 【華爾街機構動向情報】:
+🏦 【華爾街機構動向情報（優先源自 MarketBeat/TipRanks/Tickernerd）】:
 {p2_opinion}
 
 請審閱以上所有客觀資料，不偏多也不偏空，完全基於金融邏輯進行橫向交叉推演，嚴格執行以下任務：
-1. 審查矛盾：交叉比對量化數據與情報報告，找出它們之間是否存在明顯的數據矛盾、邏輯斷層或市場背離（例如：股價創高但基本面營收完全停滯；或者技術面與情緒極度亢奮但財報出現巨幅空值斷層）。
+1. 審查矛盾：交叉比對量化數據與情報報告，找出它們之間是否存在明顯的數據矛盾、邏輯斷層或市場背離（例如：股價創高但基本面營收完全停滯；或者技術面與情緒極度亢奮但財報出現大額空值斷層）。
 2. 診斷原因：若存在背離，請判定此背離的底層核心成因是什麼（分析師評級大幅滯後？技術面帶量誘多假突破？還是大資金正在暗中反向佈局？）。
 3. 中立結論：排除所有市場噪音，純粹基於邏輯與事實，給出你最終的中立推理結論與客觀防禦配置指引。
 
@@ -394,7 +394,6 @@ RS相對強度評級: {s.get('rs_rating') if s.get('rs_rating') is not None else
 **📋 最終量化結論**：(填入你基於數據給出的最終客觀結論，並對齊系統止損 ${s.get('stop_loss', 'N/A')} 與目標價 ${s.get('target', 'N/A')} 給出防守位配置說明)"""
 
     try:
-        # 🎯 物理對齊大佬點名的 DeepSeek R1 最高推理型大腦 (加強超時防護至 60 秒)
         r_judge = requests.post(
             or_url,
             headers=headers,
@@ -414,7 +413,6 @@ RS相對強度評級: {s.get('rs_rating') if s.get('rs_rating') is not None else
             
         final_verdict = r_judge['choices'][0]['message']['content']
 
-        # 💯 完美向下兼容並餵滿前端 UI 方塊欄位，物理粉碎「空白」與「占位符」
         return jsonify({
             'success': True,
             'agents': {
