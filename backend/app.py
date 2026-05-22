@@ -140,11 +140,7 @@ def cron_scan():
 @app.route('/api/scan/status')
 def scan_progress():
     status = get_meta('scan_status') or {
-        'is_scanning': False,
-        'progress': 0,
-        'current': '未啟動',
-        'total': 227,
-        'done': 0
+        'is_scanning': False, 'progress': 0, 'current': '未啟動', 'total': 227, 'done': 0
     }
     return jsonify({
         'success': True,
@@ -257,7 +253,7 @@ def single_stock(ticker):
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 500
 
-# ─── 🤖 AI MULTI-AGENT INTELLIGENCE ROUNDTABLE v2 (排好隊伍標準版) ───
+# ─── 🤖 AI MULTI-AGENT INTELLIGENCE ROUNDTABLE v2 (4-Agent DeepSeek 坐鎮版) ───
 @app.route('/api/scan/ai_debate', methods=['POST', 'GET'])
 def ai_debate():
     import os
@@ -403,29 +399,34 @@ RS評級: {s.get('rs_rating', 'N/A')} | Beta: {s.get('beta', 'N/A')} | RSI: {s.g
             except Exception as e:
                 errors.append(f"{agent_name}: {str(e)}")
 
+    # ⚖️ 釋放硬核靈魂：不再受制於 Google 的條款，恢復黑白分明的實戰判決格式
     judge_prompt = f"""{stock_context}
-【重要合規聲明：本報告僅作為資料科學學術模擬與歷史公開資訊整合練習，不包含任何投資招攬、操作推薦或前瞻性財務指導。】
+你是華爾街最高【總裁判官】。現在請你全面整合審閱下方三位情報官提供的實時報告，針對用戶的核心提問「{user_query}」，給出黑白分明、毫無水分的最終交易決策。
 
-你是【數據客觀整合官】，請審閱並摘要對齊下方三位分析師的客觀學術研究，針對用戶 query 「{user_query}」進行純粹的資料比對與大數據趨勢歸納：
-📰 研究員甲: \"{news_opinion}\"
-🏦 研究員乙: \"{institution_opinion}\"
-📊 研究員丙: \"{fundamental_opinion}\"
+📰 【新聞情報官報告】:
+{news_opinion or '數據獲取失敗'}
 
-請嚴格依據以下客觀學術格式進行中立排版：
-**📊 資訊整合要點**（客觀列出多方資訊吻合處）
-**🔍 數據潛在盲區**（列出財報或新聞中未明朗的風險因子）
-**📝 模擬量化評級**（給出模型中立分類：類別A-動能強/類別B-基本穩/類別C-觀望中/類別D-保守看，並說明數據邏輯）
-**⚙️ 數學參照區間**（僅依據公式計算之止損 ${s.get('stop_loss', 'N/A')} 與目標 ${s.get('target', 'N/A')} 進行公式對齊說明）
-完全使用繁體中文，300字內。"""
+🏦 【機構動向官報告】:
+{institution_opinion or '數據獲取失敗'}
+
+📊 【財報深度官報告】:
+{fundamental_opinion or '數據獲取失敗'}
+
+請嚴格依據以下戰略格式進行排版輸出（字數 300 字內，完全使用繁體中文）：
+**✅ 綜合看多因素**（列出 2-3 點最強的技術與催化劑因素）
+**⚠️ 風險注意要點**（列出 2-3 點最致命的財務或利空風險）
+**📋 最終裁決**（必須給出「強力支撐 / 基本支撐 / 中性觀望 / 建議迴避」四選一結論，並說明理由）
+**🛡️ 風控與倉位建議**（根據系統建議止損 ${s.get('stop_loss', 'N/A')} 與目標 ${s.get('target', 'N/A')}，給出最硬核的資金與防禦倉位配置指引）"""
 
     try:
+        # 🎯 物理切換回不鎖投資建議、便宜且推理強悍的 deepseek/deepseek-chat
         r4 = requests.post(
             or_url,
             headers=headers,
             json={
-                "model": "google/gemini-2.0-flash-001",
+                "model": "deepseek/deepseek-chat",
                 "messages": [{"role": "user", "content": judge_prompt}],
-                "temperature": 0.3
+                "temperature": 0.5
             },
             timeout=45
         ).json()
@@ -458,7 +459,7 @@ RS評級: {s.get('rs_rating', 'N/A')} | Beta: {s.get('beta', 'N/A')} | RSI: {s.g
                 },
                 'judge': {
                     'label': '⚖️ 總裁判官',
-                    'model': 'Gemini 2.0 Flash',
+                    'model': 'DeepSeek 旗艦大腦',
                     'content': final_verdict
                 }
             },
