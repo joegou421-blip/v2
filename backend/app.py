@@ -160,8 +160,6 @@ def single_stock(ticker):
         return jsonify({'success': False, 'error': '代號格式錯誤'}), 400
     try:
         from scanner import get_technicals, get_fundamentals, score_stock
-        import time
-
         spy_close = 400.0  
         try:
             from scanner import get_spy
@@ -188,7 +186,7 @@ def single_stock(ticker):
         try:
             score, signal, signal_label, breakdown = score_stock(tech, fund)
         except Exception as e_score:
-            print(f"[API SCORE CRASH] {symbol} 算分核心核爆，啟動安全防禦降維: {e_score}")
+            print(f"[API SCORE CRASH] {symbol} 算分核心核爆: {e_score}")
             score = 5
             signal = 'watch'
             signal_label = '觀望 (財務數據異常)'
@@ -235,11 +233,11 @@ def single_stock(ticker):
         return jsonify({'success': False, 'error': str(e)}), 500
 
 # ─── 🤖 AI MULTI-AGENT INTELLIGENCE ROUNDTABLE v2 ───
-# 4 個 Agent 各司其職，並行搜索，最後由 Claude 整合
+# 4 個 Agent 各司其職，並行搜索，最後由 Gemini 整合裁決
 # Agent 1: 新聞情報官 (Perplexity - 真實聯網)
 # Agent 2: 機構動向官 (Perplexity - 真實聯網)
 # Agent 3: 財報深度官 (DeepSeek - 分析量化數據)
-# Agent 4: 總裁判官   (Claude Sonnet - 整合三方結論)
+# Agent 4: 總裁判官   (Gemini 2.0 Flash - 高速整合共識結論)
 
 @app.route('/api/scan/ai_debate', methods=['POST', 'GET'])
 def ai_debate():
@@ -256,40 +254,27 @@ def ai_debate():
     symbol = req_json.get('symbol', '').upper().strip()
     user_query = req_json.get('query', '請評估這隻股票目前的進場時機與潛在風險')
 
-    # ── 背景抓取量化數據（如果前端沒傳）──
+    # ── 背景抓取量化數據 ──
     if (not s or 'symbol' not in s) and symbol:
         try:
             from scanner import get_technicals, get_fundamentals, score_stock, get_spy
             spy_close = 400.0
-            try:
-                spy_close = get_spy()['close']
-            except:
-                pass
+            try: spy_close = get_spy()['close']
+            except: pass
             tech = get_technicals(symbol, spy_close)
             if tech and tech.get('price') is not None:
                 close_s = tech.pop('_close', None)
-                try:
-                    fund = get_fundamentals(symbol, close_s, spy_close)
-                except:
-                    fund = {}
+                try: fund = get_fundamentals(symbol, close_s, spy_close)
+                except: fund = {}
                 score, signal, signal_label, breakdown = score_stock(tech, fund)
                 s = {
-                    'symbol': symbol,
-                    'company_name': fund.get('company_name', symbol),
-                    'price': tech.get('price'),
-                    'score': score,
-                    'signal_label': signal_label,
-                    'rev_yoy': fund.get('rev_yoy'),
-                    'eps_yoy': fund.get('eps_yoy'),
-                    'beta': fund.get('beta'),
-                    'rs_rating': tech.get('rs_rating'),
-                    'stop_loss': tech.get('stop_loss'),
-                    'target': tech.get('target'),
-                    'rsi': tech.get('rsi'),
-                    'atr_pct': tech.get('atr_pct'),
-                    'vol_mult': tech.get('vol_mult'),
-                    'sector': fund.get('sector', ''),
-                    'market_cap': fund.get('market_cap', 0),
+                    'symbol': symbol, 'company_name': fund.get('company_name', symbol),
+                    'price': tech.get('price'), 'score': score, 'signal_label': signal_label,
+                    'rev_yoy': fund.get('rev_yoy'), 'eps_yoy': fund.get('eps_yoy'),
+                    'beta': fund.get('beta'), 'rs_rating': tech.get('rs_rating'),
+                    'stop_loss': tech.get('stop_loss'), 'target': tech.get('target'),
+                    'rsi': tech.get('rsi'), 'atr_pct': tech.get('atr_pct'), 'vol_mult': tech.get('vol_mult'),
+                    'sector': fund.get('sector', ''), 'market_cap': fund.get('market_cap', 0),
                 }
         except Exception as err:
             print(f"[AI DEBATE BACKGROUND LOOKUP ERR] {symbol}: {err}")
@@ -307,7 +292,7 @@ def ai_debate():
     }
     or_url = "https://openrouter.ai/api/v1/chat/completions"
 
-    # ── 量化快照（所有 Agent 共用）──
+    # ── 量化快照 ──
     stock_context = f"""
 【股票量化快照】
 代號: {s.get('symbol')} | 公司: {s.get('company_name', s.get('symbol'))}
@@ -321,66 +306,44 @@ RSI: {s.get('rsi', 'N/A')} | ATR%: {s.get('atr_pct', 'N/A')}% | 量能倍數: {s
 【用戶問題】: {user_query}
 """
 
-    # ── 定義四個 Agent ──
-
     def agent_news():
-        """新聞情報官：搜索最新新聞與催化劑（真實聯網）"""
         prompt = f"""{stock_context}
-
-你是【新聞情報官】，任務是搜索並報告最新市場情報。
-請立即聯網搜索以下資訊：
+你是【新聞情報官】，任務是搜索並報告最新市場情報。請立即聯網搜索以下資訊：
 1. {s.get('symbol')} 最近 2 週的重大新聞（財報發布、產品發布、併購、監管）
 2. 即將到來的催化劑（下次財報日期、重要活動）
 3. 最新的市場情緒與板塊趨勢
-
-⚠️ 只報告你搜索到的真實資訊，沒有搜索到的不要捏造。
-必須用繁體中文回答，字數 150 字內。"""
+⚠️ 只報告你搜索到的真實資訊，沒有搜索到的不要捏造。必須用繁體中文回答，字數 150 字內。"""
         r = requests.post(or_url, headers=headers, json={
-            "model": "perplexity/llama-3.1-sonar-large-128k-online",
-            "messages": [{"role": "user", "content": prompt}]
+            "model": "perplexity/llama-3.1-sonar-large-128k-online", "messages": [{"role": "user", "content": prompt}]
         }, timeout=30).json()
-        if 'choices' not in r:
-            return None, f"新聞情報官異常: {r.get('error', {}).get('message', str(r))}"
+        if 'choices' not in r: return None, f"新聞情報官異常: {r.get('error', {}).get('message', str(r))}"
         return r['choices'][0]['message']['content'], None
 
     def agent_institution():
-        """機構動向官：搜索分析師評級與機構動向（真實聯網）"""
         prompt = f"""{stock_context}
-
-你是【機構動向官】，任務是搜索華爾街機構的最新動向。
-請立即聯網搜索以下資訊：
+你是【機構動向官】，任務是搜索華爾街機構的最新動向。請立即聯網搜索以下資訊：
 1. 最近 30 天內分析師評級變化（升評/降評/維持）
 2. 機構目標價調整（調升/調降）
 3. 大型機構或對沖基金最新持倉變化（如有公開資訊）
-
-⚠️ 只報告你搜索到的真實資訊，沒有搜索到的不要捏造。
-必須用繁體中文回答，字數 150 字內。"""
+⚠️ 只報告你搜索到的真實資訊，沒有搜索到的不要捏造。必須用繁體中文回答，字數 150 字內。"""
         r = requests.post(or_url, headers=headers, json={
-            "model": "perplexity/llama-3.1-sonar-large-128k-online",
-            "messages": [{"role": "user", "content": prompt}]
+            "model": "perplexity/llama-3.1-sonar-large-128k-online", "messages": [{"role": "user", "content": prompt}]
         }, timeout=30).json()
-        if 'choices' not in r:
-            return None, f"機構動向官異常: {r.get('error', {}).get('message', str(r))}"
+        if 'choices' not in r: return None, f"機構動向官異常: {r.get('error', {}).get('message', str(r))}"
         return r['choices'][0]['message']['content'], None
 
     def agent_fundamental():
-        """財報深度官：深度解讀量化財務數據"""
         prompt = f"""{stock_context}
-
-你是【財報深度官】，任務是深度解讀量化財務數據的健康程度。
-請基於上方快照數據分析：
+你是【財報深度官】，任務是深度解讀量化財務數據的健康程度。請基於上方快照數據分析：
 1. EPS 與營收趨勢是加速還是減速？這個增長率在同板塊中是否有競爭力？
 2. RS評級 {s.get('rs_rating', 'N/A')} 代表這隻股票相對大盤的強弱如何？
 3. Beta {s.get('beta', 'N/A')} 在當前市況下，波動風險是否可控？
 4. From財務角度，這隻股票的基本面能否支撐技術面的突破持續性？
-
 必須用繁體中文回答，字數 200 字內。給出明確的「財務支撐強/中/弱」結論。"""
         r = requests.post(or_url, headers=headers, json={
-            "model": "deepseek/deepseek-chat",
-            "messages": [{"role": "user", "content": prompt}]
+            "model": "deepseek/deepseek-chat", "messages": [{"role": "user", "content": prompt}]
         }, timeout=30).json()
-        if 'choices' not in r:
-            return None, f"財報深度官異常: {r.get('error', {}).get('message', str(r))}"
+        if 'choices' not in r: return None, f"財報深度官異常: {r.get('error', {}).get('message', str(r))}"
         return r['choices'][0]['message']['content'], None
 
     # ── 並行執行三個 Agent ──
@@ -400,18 +363,14 @@ RSI: {s.get('rsi', 'N/A')} | ATR%: {s.get('atr_pct', 'N/A')}% | 量能倍數: {s
                 if err:
                     errors.append(err)
                     result = f"（此 Agent 數據獲取失敗：{err}）"
-                if agent_name == 'news':
-                    news_opinion = result
-                elif agent_name == 'institution':
-                    institution_opinion = result
-                elif agent_name == 'fundamental':
-                    fundamental_opinion = result
+                if agent_name == 'news': news_opinion = result
+                elif agent_name == 'institution': institution_opinion = result
+                elif agent_name == 'fundamental': fundamental_opinion = result
             except Exception as e:
                 errors.append(f"{agent_name}: {str(e)}")
 
     # ── Agent 4：總裁判官整合三方結論 ──
     judge_prompt = f"""{stock_context}
-
 你是【總裁判官】，你已收到三位專家的獨立分析報告：
 
 📰 【新聞情報官報告】:
@@ -423,7 +382,7 @@ RSI: {s.get('rsi', 'N/A')} | ATR%: {s.get('atr_pct', 'N/A')}% | 量能倍數: {s
 📊 【財報深度官報告】:
 {fundamental_opinion or '數據獲取失敗'}
 
-任務：整合以上三份報告，針對用戶問題「{user_query}」給出最終裁決。
+任務：審閱整合以上三份報告，針對用戶問題「{user_query}」給出最終裁決。
 
 請按以下格式回答：
 
@@ -440,9 +399,9 @@ RSI: {s.get('rsi', 'N/A')} | ATR%: {s.get('atr_pct', 'N/A')}% | 量能倍數: {s
 必須用繁體中文回答，字數 300 字內。"""
 
     try:
-        # 🎯 核心修復點：將原來的 google/gemini-2.0-flash-001 物理修正為正宗付費旗艦版 Claude 3.5 Sonnet
+        # 🎯 物理切換回 Google 旗艦版 Gemini 2.0 Flash，全面繞過 Anthropic 區域封鎖
         r4 = requests.post(or_url, headers=headers, json={
-            "model": "anthropic/claude-3.5-sonnet",
+            "model": "google/gemini-2.0-flash-001",
             "messages": [{"role": "user", "content": judge_prompt}]
         }, timeout=45).json()
 
@@ -471,11 +430,10 @@ RSI: {s.get('rsi', 'N/A')} | ATR%: {s.get('atr_pct', 'N/A')}% | 量能倍數: {s
                 },
                 'judge': {
                     'label': '⚖️ 總裁判官',
-                    'model': 'Claude Sonnet',
+                    'model': 'Gemini 2.0 Flash',
                     'content': final_verdict
                 }
             },
-            # 向下兼容舊版前端字段
             'p1_opinion': news_opinion,
             'p2_opinion': institution_opinion,
             'p3_opinion': fundamental_opinion,
