@@ -253,11 +253,12 @@ def single_stock(ticker):
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 500
 
-# ─── ⚖️ 2-COMPONENT ULTRA-LEAN QUANT SYSTEM (三大數據源精準修訂版) ───
+# ─── ⚖️ 2-COMPONENT ULTRA-LEAN QUANT SYSTEM (工業級終極合流複盤管線) ───
 @app.route('/api/scan/ai_debate', methods=['POST', 'GET'])
 def ai_debate():
     import os
     import requests
+    from concurrent.futures import ThreadPoolExecutor, as_completed
     
     api_key = os.environ.get("OPENROUTER_API_KEY", "")
     if request.method == 'GET':
@@ -310,6 +311,20 @@ def ai_debate():
     if not api_key:
         return jsonify({'success': False, 'error': '未設定 OPENROUTER_API_KEY'}), 400
 
+    # 🛠️ 數據預處理：防禦性清洗網，全物理物理超渡 None / NaN 字串漏洞
+    def sanitize_val(val, prefix="$", default="無數據(N/A)"):
+        if val is None or str(val).strip().lower() in ['none', '--', 'nan', 'null', '']:
+            return default
+        val_str = str(val).strip()
+        if prefix == "$" and val_str.startswith("$"):
+            return val_str
+        return f"{prefix}{val_str}"
+
+    sl_clean = sanitize_val(s.get('stop_loss'), prefix="$")
+    tg_clean = sanitize_val(s.get('target'), prefix="$")
+    eps_clean = sanitize_val(s.get('eps_yoy'), prefix="", default="無數據(N/A)")
+    rev_clean = sanitize_val(s.get('rev_yoy'), prefix="", default="無數據(N/A)")
+
     headers = {
         "Authorization": f"Bearer {api_key}",
         "HTTP-Referer": "https://stockscanner.com",
@@ -321,77 +336,76 @@ def ai_debate():
 【實時量化數據快照（真實數據源）】
 代號: {s.get('symbol')} | 公司: {s.get('company_name')} | 當前股價: ${s.get('price')}
 量化總分: {s.get('score')}/15 | 系統初始訊號: {s.get('signal_label')}
-EPS年增率: {s.get('eps_yoy') if s.get('eps_yoy') is not None else '無數據(N/A)'}%
-營收年增率: {s.get('rev_yoy') if s.get('rev_yoy') is not None else '無數據(N/A)'}%
-RS相對強度評級: {s.get('rs_rating') if s.get('rs_rating') is not None else 'N/A'}
-風險 Beta 值: {s.get('beta') if s.get('beta') is not None else 'N/A'}
-指標 RSI: {s.get('rsi') if s.get('rsi') is not None else 'N/A'} | ATR% 日均波動: {s.get('atr_pct') if s.get('atr_pct') is not None else 'N/A'}%
-成交量倍數: {s.get('vol_mult') if s.get('vol_mult') is not None else 'N/A'}x
-系統建議止損: ${s.get('stop_loss', 'N/A')} | 預估目標價: ${s.get('target', 'N/A')}
+EPS年增率: {eps_clean}% | 營收年增率: {rev_clean}%
+RS相對強度評級: {s.get('rs_rating', 'N/A')} | 風險 Beta 值: {s.get('beta', 'N/A')}
+指標 RSI: {s.get('rsi', 'N/A')} | ATR% 日均波動: {s.get('atr_pct', 'N/A')}% | 成交量倍數: {s.get('vol_mult', 'N/A')}x
+系統建議止損位: {sl_clean} | 預估目標價位: {tg_clean}
 【核心提問】: {user_query}
 """
 
+    # 📰 1. 新聞情報官：Claude 工業級極簡 Prompt + 我們的全域上下文防線
+    def get_news_agent():
+        prompt = f"""{stock_context}
+任務：你是【新聞情報官】。請聯網搜索：
+1. {s.get('symbol')} 最近 2 週重大新聞、公告、財報日期
+2. 當前市場情緒與板塊趨勢
+
+只報告可核實事實，不猜測。繁體中文，200 字內。"""
+        try:
+            r = requests.post(or_url, headers=headers, json={"model": "perplexity/sonar", "messages": [{"role": "user", "content": prompt}]}, timeout=30).json()
+            return r['choices'][0]['message']['content'] if 'choices' in r else "（新聞情報獲取延遲）"
+        except Exception as e: return f"（新聞情報網路異常: {str(e)}）"
+
+    # 🏦 2. 機構動向官：Claude 硬核數字定向爆破 + 我們的全域上下文盲區防線
+    def get_institution_agent():
+        prompt = f"""{stock_context}
+任務：請聯網搜索「{s.get('symbol')} analyst consensus rating buy hold sell target price 2026」。
+來源優先：MarketBeat、TipRanks、Tickernerd。
+
+回報：
+- Buy/Hold/Sell 人數與比例
+- 共識目標價
+- 最近有哪家券商調整評級與具體數值
+
+只報告數字與事實。繁體中文，150 字內。"""
+        try:
+            r = requests.post(or_url, headers=headers, json={"model": "perplexity/sonar", "messages": [{"role": "user", "content": prompt}]}, timeout=30).json()
+            return r['choices'][0]['message']['content'] if 'choices' in r else "（機構籌碼獲取延遲）"
+        except Exception as e: return f"（機構籌碼網路異常: {str(e)}）"
+
     p1_opinion = "（前線情報獲取失敗）"
     p2_opinion = "（前線情報獲取失敗）"
-    
-    try:
-        # 🎯 機構動向官 Prompt 物理改造：精準注入 2026 爆破指令與三大付費級權威數據源
-        search_prompt = f"""{stock_context}
-任務：你是【實時情報官】。請立即聯網搜索該股最新情報。
-你必須嚴格將回答分為以下兩部分，並在兩部分之間精準且單獨插入一行分隔符「===SPLIT_HERE===」：
 
-第一部分：該股最近 2 週的重大真實新聞公告與即將到來的財報/法說會等重大催化劑與市場情緒。
-===SPLIT_HERE===
-第二部分：請精準搜索「{s.get('symbol')} analyst consensus rating 2026」。找出目前華爾街對該股的 Buy/Hold/Sell 分析師人數比例、最新共識目標價（Consensus Price Target），以及最近有哪些券商（Brokers）調整過評級與具體數值。來源請優先參考並採信 MarketBeat、TipRanks、Tickernerd 的公開數據。
+    # 🏎️ 雙通道高併發並行發射，等待時間維持在 4 秒內爆發
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        futures = {
+            executor.submit(get_news_agent): 'news',
+            executor.submit(get_institution_agent): 'institution'
+        }
+        for future in as_completed(futures):
+            name = futures[future]
+            if name == 'news': p1_opinion = future.result()
+            elif name == 'institution': p2_opinion = future.result()
 
-請剔除情緒水分，僅回報客觀事實。必須用繁體中文回答，兩部分總字數控制在 300 字內。"""
-        
-        r_info = requests.post(
-            or_url,
-            headers=headers,
-            json={
-                "model": "perplexity/sonar",
-                "messages": [{"role": "user", "content": search_prompt}]
-            },
-            timeout=30
-        ).json()
-        
-        if 'choices' in r_info:
-            full_content = r_info['choices'][0]['message']['content']
-            if "===SPLIT_HERE===" in full_content:
-                parts = full_content.split("===SPLIT_HERE===")
-                p1_opinion = parts[0].strip()
-                p2_opinion = parts[1].strip()
-            else:
-                p1_opinion = full_content
-                p2_opinion = "（數據已自動整合輸出）"
-        else:
-            p1_opinion = f"（網絡情報獲取失敗：{r_info.get('error', {}).get('message', str(r_info))}）"
-            p2_opinion = "（未取得機構動向數據）"
-    except Exception as e:
-        p1_opinion = f"（網絡情報獲取超時：{str(e)}）"
-        p2_opinion = "（超時未取得數據）"
-
-    # ⚖️ 靈魂主位：滿血版 DeepSeek R1 思考大腦，執行無立場三步法拷問
+    # ⚖️ 3. 總裁判官：Claude 的中立三步法 + 我們的「首席量化分析師」心態錨定靈魂
     judge_prompt = f"""{stock_context}
 
-你是冷靜、絕對中立、毫無立場的頂級量化分析師。你現在收到上方提供的【實時量化數據快照】與下方前線帶回的實時情報：
+你是冷靜、絕對中立、毫無立場的頂級量化分析師。
 
-📰 【實時新聞與催化劑情報】:
-{p1_opinion}
+【新聞情報】: {p1_opinion}
+【機構動向】: {p2_opinion}
 
-🏦 【華爾街機構動向情報（優先源自 MarketBeat/TipRanks/Tickernerd）】:
-{p2_opinion}
+不偏多不偏空，執行以下三步橫向交叉推演：
+1. 審查矛盾：上述量化數據與情報之間有無明顯背離？
+2. 診斷原因：背離的底層金融邏輯是什麼？（機構滯後？基本面惡化？技術假突破？）
+3. 中立結論：純粹基於邏輯與數據的最終判斷。
 
-請審閱以上所有客觀資料，不偏多也不偏空，完全基於金融邏輯進行橫向交叉推演，嚴格執行以下任務：
-1. 審查矛盾：交叉比對量化數據與情報報告，找出它們之間是否存在明顯的數據矛盾、邏輯斷層或市場背離（例如：股價創高但基本面營收完全停滯；或者技術面與情緒極度亢奮但財報出現大額空值斷層）。
-2. 診斷原因：若存在背離，請判定此背離的底層核心成因是什麼（分析師評級大幅滯後？技術面帶量誘多假突破？還是大資金正在暗中反向佈局？）。
-3. 中立結論：排除所有市場噪音，純粹基於邏輯與事實，給出你最終的中立推理結論與客觀防禦配置指引。
+⚠️ 嚴格按以下格式輸出，排版絕不允許亂來：
+**🔍 多空背離審查**：
+**⚙️ 核心成因診斷**：
+**📋 最終量化結論**：（含止損 {sl_clean} / 目標 {tg_clean} 防守位說明）
 
-⚠️ 格式限制：必須嚴格依據以下 Markdown 標題輸出，排版永不允許亂來：
-**🔍 多空背離審查**：(填入你發現的矛盾與斷層，若無則寫無)
-**⚙️ 核心成因診斷**：(填入你對背離原因的中立金融邏輯推演)
-**📋 最終量化結論**：(填入你基於數據給出的最終客觀結論，並對齊系統止損 ${s.get('stop_loss', 'N/A')} 與目標價 ${s.get('target', 'N/A')} 給出防守位配置說明)"""
+繁體中文，300 字內。"""
 
     try:
         r_judge = requests.post(
