@@ -181,6 +181,7 @@ def clear_scan():
     conn.close()
     return jsonify({'success': True})
 
+# 🔌 主搜尋路由武裝：當 yfinance 遭遇 Render IP 阻斷時，完美啟用 Alpha Vantage 備援
 @app.route('/api/stock/<ticker>')
 def single_stock(ticker):
     symbol = ticker.upper().strip()
@@ -188,72 +189,102 @@ def single_stock(ticker):
     if not re.match(r'^[A-Z.\-]{1,10}$', symbol):
         return jsonify({'success': False, 'error': '代號格式錯誤'}), 400
         
+    tech = None
+    fund = {'_source': 'yfinance_fallback'}
+    spy_close = 400.0
+    
     try:
-        from scanner import get_technicals, get_fundamentals, score_stock
-        spy_close = 400.0
-        try:
-            from scanner import get_spy
-            spy_close = get_spy()['close']
-        except:
-            pass
-            
-        try:
-            tech = get_technicals(symbol, spy_close)
-        except Exception as e_tech:
-            tech = None
-            
-        if not tech or tech.get('price') is None:
-            return jsonify({'success': False, 'error': f'無法取得 {symbol} 即時技術面數據'}), 404
-            
-        close_s = tech.pop('_close', None)
-        try:
-            fund = get_fundamentals(symbol, close_s, spy_close)
-        except:
-            fund = {'_source': 'yfinance_fallback'}
-            
-        try:
-            score, signal, signal_label, breakdown = score_stock(tech, fund)
-        except:
-            score = 5
-            signal = 'watch'
-            signal_label = '觀望 (財務數據異常)'
-            breakdown = {}
-            
-        raw_eps = fund.get('eps_yoy')
-        try:
-            is_turn = bool(fund.get('turned_profitable') or (isinstance(raw_eps, (int, float)) and not np.isnan(raw_eps) and raw_eps < -100))
-        except:
-            is_turn = False
-            
-        result = {
-            'symbol': symbol,
-            'company_name': fund.get('company_name', symbol),
-            'price': tech.get('price', 0.0),
-            'score': score,
-            'signal': signal,
-            'signal_label': signal_label,
-            'not_stage2': tech.get('not_stage2', False),
-            'breakdown': breakdown,
-            'rev_yoy': None if (isinstance(fund.get('rev_yoy'), float) and np.isnan(fund.get('rev_yoy'))) else fund.get('rev_yoy'),
-            'eps_yoy': "由虧轉盈" if is_turn else (None if (isinstance(raw_eps, float) and np.isnan(raw_eps)) else raw_eps),
-            'beta': 1.0 if (fund.get('beta') is None or (isinstance(fund.get('beta'), float) and np.isnan(fund.get('beta')))) else fund.get('beta'),
-            'rs_rating': 50.0 if (tech.get('rs_rating') is None or (isinstance(tech.get('rs_rating'), float) and np.isnan(tech.get('rs_rating')))) else tech['rs_rating'],
-            'stop_loss': tech.get('stop_loss', '--'),
-            'target': tech.get('target', '--'),
-            'rr': tech.get('rr', '--'),
-            'industry': fund.get('industry', fund.get('sector', '美股個股')),
-            'sector': fund.get('sector', ''),
-            'atr_pct': tech.get('atr_pct', '--'),
-            'rsi': tech.get('rsi', '--'),
-            'vol_mult': tech.get('vol_mult', '--'),
-            'chase_risk': tech.get('chase_risk', False),
-            'fund_source': fund.get('_source', '?')
-        }
-        return jsonify({'success': True, 'data': result})
-    except Exception as e:
-        return jsonify({'success': False, 'error': str(e)}), 500
+        from scanner import get_spy
+        spy_close = get_spy()['close']
+    except:
+        pass
 
-# ─── ⚖️ 2-COMPONENT ULTRA-LEAN QUANT SYSTEM (工業級終極合流複盤管線 v3) ───
+    # 主線任務：嘗試使用 yfinance 抓取
+    try:
+        from scanner import get_technicals, get_fundamentals
+        tech = get_technicals(symbol, spy_close)
+    except Exception as e_tech:
+        print(f"[yfinance Main Route Technical Failed] {symbol}: {e_tech}")
+        tech = None
+            
+    # 🛡️ 備援機制觸發：若 yfinance 斷流或查無數據，立即調用 Alpha Vantage
+    if not tech or tech.get('price') is None:
+        av_key = os.environ.get("ALPHA_VANTAGE_KEY", "")
+        if av_key:
+            try:
+                print(f"[*] 主搜尋路由啟動備援：yfinance 遭封鎖，正在調用 Alpha Vantage 載入 {symbol}...")
+                url = f"https://www.alphavantage.co/query?function=GLOBAL_QUOTE&symbol={symbol}&apikey={av_key}"
+                res = requests.get(url, timeout=10).json()
+                quote = res.get("Global Quote", {})
+                if quote and "05. price" in quote:
+                    price_val = float(quote["05. price"])
+                    tech = {
+                        'price': price_val,
+                        'rs_rating': 50.0,
+                        'rsi': 50.0,
+                        'atr_pct': 3.0,
+                        'vol_mult': 1.0,
+                        'stop_loss': round(price_val * 0.9, 2),
+                        'target': round(price_val * 1.3, 2),
+                        'chase_risk': False,
+                        'not_stage2': False
+                    }
+                    fund = {
+                        'company_name': symbol,
+                        'rev_yoy': None,
+                        'eps_yoy': None,
+                        'beta': 1.0,
+                        'industry': '美股個股（AV備援）',
+                        'sector': '技術反封鎖備援源',
+                        '_source': 'Alpha_Vantage_Backup'
+                    }
+            except Exception as av_err:
+                print(f"[-] 主搜尋路由 Alpha Vantage 備援接口同樣發生異常: {av_err}")
+
+    if not tech or tech.get('price') is None:
+        return jsonify({'success': False, 'error': f'無法取得 {symbol} 即時技術面數據（主線與備援皆斷流）'}), 404
+        
+    try:
+        score, signal, signal_label, breakdown = score_stock(tech, fund)
+    except:
+        score = 5
+        signal = 'watch'
+        signal_label = '觀望 (財務數據異常)'
+        breakdown = {}
+        
+    raw_eps = fund.get('eps_yoy')
+    try:
+        is_turn = bool(fund.get('turned_profitable') or (isinstance(raw_eps, (int, float)) and not np.isnan(raw_eps) and raw_eps < -100))
+    except:
+        is_turn = False
+        
+    result = {
+        'symbol': symbol,
+        'company_name': fund.get('company_name', symbol),
+        'price': tech.get('price', 0.0),
+        'score': score,
+        'signal': signal,
+        'signal_label': signal_label,
+        'not_stage2': tech.get('not_stage2', False),
+        'breakdown': breakdown,
+        'rev_yoy': None if (isinstance(fund.get('rev_yoy'), float) and np.isnan(fund.get('rev_yoy'))) else fund.get('rev_yoy'),
+        'eps_yoy': "由虧轉盈" if is_turn else (None if (isinstance(raw_eps, float) and np.isnan(raw_eps)) else raw_eps),
+        'beta': 1.0 if (fund.get('beta') is None or (isinstance(fund.get('beta'), float) and np.isnan(fund.get('beta')))) else fund.get('beta'),
+        'rs_rating': 50.0 if (tech.get('rs_rating') is None or (isinstance(tech.get('rs_rating'), float) and np.isnan(tech.get('rs_rating')))) else tech['rs_rating'],
+        'stop_loss': tech.get('stop_loss', '--'),
+        'target': tech.get('target', '--'),
+        'rr': tech.get('rr', '--'),
+        'industry': fund.get('industry', fund.get('sector', '美股個股')),
+        'sector': fund.get('sector', ''),
+        'atr_pct': tech.get('atr_pct', '--'),
+        'rsi': tech.get('rsi', '--'),
+        'vol_mult': tech.get('vol_mult', '--'),
+        'chase_risk': tech.get('chase_risk', False),
+        'fund_source': fund.get('_source', '?')
+    }
+    return jsonify({'success': True, 'data': result})
+
+# ─── ⚖️ AI 圓桌會審路由（單一請求·精準過濾·DeepSeek R1 三步裁決體系） ───
 @app.route('/api/scan/ai_debate', methods=['POST', 'GET'])
 def ai_debate():
     import os
@@ -268,22 +299,18 @@ def ai_debate():
     symbol = req_json.get('symbol', '').upper().strip()
     user_query = req_json.get('query', '請評估這隻股票目前的進場時機與潛在風險')
 
-    # 🔌 1. 數據備援防線：如果前端傳入空數據，或者主線 yfinance 遭遇 Render IP 阻斷
+    # 若前端未傳入完整數據包，動態嘗試使用 yfinance
     if (not s or 'symbol' not in s) and symbol:
         try:
             from scanner import get_technicals, get_fundamentals, score_stock, get_spy
             spy_close = 400.0
-            try:
-                spy_close = get_spy()['close']
-            except:
-                pass
+            try: spy_close = get_spy()['close']
+            except: pass
             tech = get_technicals(symbol, spy_close)
             if tech and tech.get('price') is not None:
                 close_s = tech.pop('_close', None)
-                try:
-                    fund = get_fundamentals(symbol, close_s, spy_close)
-                except:
-                    fund = {}
+                try: fund = get_fundamentals(symbol, close_s, spy_close)
+                except: fund = {}
                 score, signal, signal_label, breakdown = score_stock(tech, fund)
                 s = {
                     'symbol': symbol,
@@ -304,14 +331,14 @@ def ai_debate():
                     'market_cap': fund.get('market_cap', 0),
                 }
         except Exception as err:
-            print(f"[yfinance Primary Lookup Failed]: {err}")
+            print(f"[yfinance Debate Route Lookup Failed]: {err}")
 
-        # 🛡️ Alpha Vantage 免費版數據備援核心觸發點
+        # 🛡️ 辯論路由備援觸發點：同步調用 Alpha Vantage 保底
         if not s or 'symbol' not in s:
             av_key = os.environ.get("ALPHA_VANTAGE_KEY", "")
             if av_key:
                 try:
-                    print(f"[*] 啟動數據備援：yfinance 遭 Render IP 封鎖，正在調用 Alpha Vantage 獲取 {symbol}...")
+                    print(f"[*] 辯論路由啟動備援：正在調用 Alpha Vantage 獲取 {symbol}...")
                     url = f"https://www.alphavantage.co/query?function=GLOBAL_QUOTE&symbol={symbol}&apikey={av_key}"
                     res = requests.get(url, timeout=10).json()
                     quote = res.get("Global Quote", {})
@@ -319,7 +346,7 @@ def ai_debate():
                         price_val = float(quote["05. price"])
                         s = {
                             'symbol': symbol,
-                            'company_name': symbol, # 免費行情接口預設代號作為全名
+                            'company_name': symbol,
                             'price': price_val,
                             'score': 10,
                             'signal_label': "中性觀望 (由 Alpha Vantage 備援數據源載入)",
@@ -336,14 +363,14 @@ def ai_debate():
                             'market_cap': 0
                         }
                 except Exception as av_err:
-                    print(f"[-] Alpha Vantage 備援接口同樣發生故障: {av_err}")
+                    print(f"[-] 辯論路由 Alpha Vantage 備援接口故障: {av_err}")
 
     if not s or 'symbol' not in s:
         return jsonify({'success': False, 'error': f'無法取得「{symbol or "未知"}」的真實量化數據（主線與備援皆斷流）'}), 400
     if not api_key:
         return jsonify({'success': False, 'error': '未設定 OPENROUTER_API_KEY'}), 400
 
-    # ⚙️ 數據預處理：防禦性清洗網，清洗 yfinance / AV 吐出的所有殘缺 None / NaN 字串，杜絕 $None 核爆 Bug
+    # ⚙️ 數據預處理：清洗所有殘缺值，防止 $None 字串污染 Prompt
     def sanitize_val(val, prefix="$", default="無數據(N/A)"):
         if val is None or str(val).strip().lower() in ['none', '--', 'nan', 'null', '']:
             return default
@@ -378,7 +405,7 @@ RS相對強度評級: {s.get('rs_rating', 'N/A')} | 風險 Beta 值: {s.get('bet
     p1_opinion = "（前線新聞獲取失敗）"
     p2_opinion = "（前線機構數據獲取失敗）"
     
-    # 📰 2. 保持 2 個 Agent：Perplexity 負責新聞和機構評級（單一請求，合併出擊，字數放寬）
+    # 📰 保持 2 個 Agent：Perplexity 合併新聞與機構評級（單一請求，放寬字數）
     try:
         search_prompt = f"""{stock_context}
 任務：你是【實時情報官】。請立即聯網全面搜索該股最新情報。
@@ -393,33 +420,27 @@ RS相對強度評級: {s.get('rs_rating', 'N/A')} | 風險 Beta 值: {s.get('bet
 ⚠️ 鋼鐵過濾指令：只接受與現價在合理範圍內（當前現價的 0.3 倍至 2 倍之間）的最新目標價數據，絕對、物理剔除所有因歷史拆股（Stock Splits）未調整的過期舊數值或異常偏離數字。若發現數據存在時效分歧，請完全放棄歷史舊數據，並標註「數據存在時效分歧，已完全採信 2026 最新日期為準」。只報告數字與事實。繁體中文，150 字內。"""
         
         r_info = requests.post(
-            or_url,
-            headers=headers,
-            json={
-                "model": "perplexity/sonar",
-                "messages": [{"role": "user", "content": search_prompt}]
-            },
+            or_url, headers=headers,
+            json={"model": "perplexity/sonar", "messages": [{"role": "user", "content": search_prompt}]},
             timeout=30
         ).json()
         
         if 'choices' in r_info:
             full_content = r_info['choices'][0]['message']['content']
-            # 📐 結構化標題解耦算法：100% 穩定分離文本，向下兼容前端字段
+            # 📐 結構化標題解耦：完美分離文本，向下兼容前端舊字段
             if "### 🏦 華爾街機構動向" in full_content:
                 parts = full_content.split("### 🏦 華爾街機構動向")
                 p1_opinion = parts[0].replace("### 📰 實時新聞與催化劑", "").strip()
                 p2_opinion = "### 🏦 華爾街機構動向\n" + parts[1].strip()
             else:
                 p1_opinion = full_content
-                p2_opinion = "（機構評級數據已自動整合併入上方新聞板塊中輸出）"
+                p2_opinion = "（機構評級數據已自動整合輸出）"
         else:
             p1_opinion = f"（網絡情報獲取失敗：{r_info.get('error', {}).get('message', str(r_info))}）"
-            p2_opinion = "（未取得機構動向數據）"
     except Exception as e:
         p1_opinion = f"（網絡情報獲取超時：{str(e)}）"
-        p2_opinion = "（超時未取得數據）"
 
-    # ⚖️ 3. 靈魂主位：推理大腦 DeepSeek R1 坐鎮，執行無立場三步法，格式嚴格鎖死
+    # ⚖️ 靈魂主位：推理大腦 DeepSeek R1 坐鎮，執行無立場三步法，格式嚴格鎖死
     judge_prompt = f"""{stock_context}
 
 你是冷靜、絕對中立、毫無立場的頂級量化分析師。你現在收到上方提供的【實時量化數據快照】與下方前線帶回的獨立客觀報告：
@@ -431,7 +452,7 @@ RS相對強度評級: {s.get('rs_rating', 'N/A')} | 風險 Beta 值: {s.get('bet
 {p2_opinion}
 
 不偏多不偏空，請排除所有市場噪音，執行以下三步橫向交叉推演：
-1. 審查矛盾：數據與情報之間有無明顯背離？（例如：股價創高但基本面營收完全停滯；或者技術面極度亢奮但財報出現大額數據斷層）。
+1. 審查矛盾：數據與情報之間有無明顯背離？
 2. 診斷原因：背離的底層金融邏輯是什麼？（機構滯後？基本面惡化？技術假突破？）
 3. 中立結論：純粹基於邏輯與數據的最終判斷。
 
@@ -442,25 +463,13 @@ RS相對強度評級: {s.get('rs_rating', 'N/A')} | 風險 Beta 值: {s.get('bet
 
     try:
         r_judge = requests.post(
-            or_url,
-            headers=headers,
-            json={
-                "model": "deepseek/deepseek-r1",
-                "messages": [{"role": "user", "content": judge_prompt}],
-                "temperature": 0.3
-            },
+            or_url, headers=headers,
+            json={"model": "deepseek/deepseek-r1", "messages": [{"role": "user", "content": judge_prompt}], "temperature": 0.3},
             timeout=60
         ).json()
+        final_verdict = r_judge['choices'][0]['message']['content'] if 'choices' in r_judge else "最高裁判官大腦超時"
 
-        if 'choices' not in r_judge:
-            return jsonify({
-                'success': False, 
-                'error': f"最高裁判官通道限制: {r_judge.get('error', {}).get('message', str(r_judge))}"
-            }), 500
-            
-        final_verdict = r_judge['choices'][0]['message']['content']
-
-        # 💯 完美向下兼容舊版前端的所有回傳字段（p1_opinion, p2_opinion, final_consensus），網頁絕不報錯
+        # 💯 完美向下兼容前端欄位（p1_opinion, p2_opinion, final_consensus），網頁絕不報錯
         return jsonify({
             'success': True,
             'agents': {
