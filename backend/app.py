@@ -253,16 +253,15 @@ def single_stock(ticker):
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 500
 
-# ─── 🤖 AI MULTI-AGENT INTELLIGENCE ROUNDTABLE v2 (4-Agent DeepSeek 坐鎮版) ───
+# ─── ⚖️ 2-COMPONENT ULTRA-LEAN QUANT SYSTEM (中立極簡量化複盤管線) ───
 @app.route('/api/scan/ai_debate', methods=['POST', 'GET'])
 def ai_debate():
     import os
     import requests
-    from concurrent.futures import ThreadPoolExecutor, as_completed
     
     api_key = os.environ.get("OPENROUTER_API_KEY", "")
     if request.method == 'GET':
-        return jsonify({'success': False, 'error': 'AI 圓桌會後端管線通電正常！'})
+        return jsonify({'success': False, 'error': '量化複盤後端管線就緒！'})
         
     req_json = request.get_json() or {}
     s = req_json.get('stock_data', {})
@@ -304,12 +303,12 @@ def ai_debate():
                     'market_cap': fund.get('market_cap', 0),
                 }
         except Exception as err:
-            print(f"[AI DEBATE BACKGROUND LOOKUP ERR] {symbol}: {err}")
+            print(f"[LOOKUP ERR] {symbol}: {err}")
 
     if not s or 'symbol' not in s:
-        return jsonify({'success': False, 'error': f'無法取得「{symbol or "未知"}」的量化數據'}), 400
+        return jsonify({'success': False, 'error': f'無法取得「{symbol or "未知"}」的真實量化數據'}), 400
     if not api_key:
-        return jsonify({'success': False, 'error': '未設定 OPENROUTER_API_KEY。'}), 400
+        return jsonify({'success': False, 'error': '未設定 OPENROUTER_API_KEY'}), 400
 
     headers = {
         "Authorization": f"Bearer {api_key}",
@@ -318,159 +317,105 @@ def ai_debate():
     }
     or_url = "https://openrouter.ai/api/v1/chat/completions"
 
+    # 📊 組件一：真實量化數據快照（拒絕假記憶補洞，無數據即顯示 N/A）
     stock_context = f"""
-【股票量化快照】
-代號: {s.get('symbol')} | 公司: {s.get('company_name', s.get('symbol'))} | 股價: ${s.get('price')} | 板塊: {s.get('sector', '未知')}
-系統評分: {s.get('score')}/15 | 訊號: {s.get('signal_label')} | EPS年增率: {s.get('eps_yoy') if s.get('eps_yoy') is not None else 'N/A'}% | 營收年增率: {s.get('rev_yoy') if s.get('rev_yoy') is not None else 'N/A'}%
-RS評級: {s.get('rs_rating', 'N/A')} | Beta: {s.get('beta', 'N/A')} | RSI: {s.get('rsi', 'N/A')} | ATR%: {s.get('atr_pct', 'N/A')}% | 量能倍數: {s.get('vol_mult', 'N/A')}x
-止損: ${s.get('stop_loss', 'N/A')} | 目標: ${s.get('target', 'N/A')}
-【用戶問題】: {user_query}
+【實時量化數據快照（真實數據源）】
+代號: {s.get('symbol')} | 公司: {s.get('company_name')} | 當前股價: ${s.get('price')}
+量化總分: {s.get('score')}/15 | 系統初始訊號: {s.get('signal_label')}
+EPS年增率: {s.get('eps_yoy') if s.get('eps_yoy') is not None else '無數據(N/A)'}%
+營收年增率: {s.get('rev_yoy') if s.get('rev_yoy') is not None else '無數據(N/A)'}%
+RS相對強度評級: {s.get('rs_rating') if s.get('rs_rating') is not None else 'N/A'}
+風險 Beta 值: {s.get('beta') if s.get('beta') is not None else 'N/A'}
+指標 RSI: {s.get('rsi') if s.get('rsi') is not None else 'N/A'} | ATR% 日均波動: {s.get('atr_pct') if s.get('atr_pct') is not None else 'N/A'}%
+成交量倍數: {s.get('vol_mult') if s.get('vol_mult') is not None else 'N/A'}x
+系統建議止損: ${s.get('stop_loss', 'N/A')} | 預估目標價: ${s.get('target', 'N/A')}
+【核心提問】: {user_query}
 """
 
-    def agent_news():
-        prompt = f"""{stock_context}\n你是【新聞情報官】。請立即聯網報告 {s.get('symbol')} 最近 2 週的重大真實新聞、即將到來的財報催化劑與板塊趨勢。必須用繁體中文回答，字數 150 字內。"""
-        r = requests.post(
+    # 📰 組件二：前線實時情報官（一發子彈，完成客觀新聞、催化劑與華爾街大行評級肉搜）
+    info_opinion = None
+    try:
+        search_prompt = f"""{stock_context}
+任務：你是【實時情報官】。請立即聯網搜索並整合抓取該股最近兩週的重大真實新聞公告、即將到來的財報/法說會等催化劑時間，以及華爾街各大分析師最近30天的最新評級變動與目標價修訂。請剔除情緒水分，僅回報客觀事實。必須用繁體中文回答，字數300字內。"""
+        
+        r_info = requests.post(
             or_url,
             headers=headers,
             json={
-                "model": "perplexity/llama-3.1-sonar-large-128k-online",
-                "messages": [{"role": "user", "content": prompt}]
+                "model": "perplexity/sonar",
+                "messages": [{"role": "user", "content": search_prompt}]
             },
             timeout=30
         ).json()
-        if 'choices' not in r:
-            return None, f"新聞情報官異常: {r.get('error', {}).get('message', str(r))}"
-        return r['choices'][0]['message']['content'], None
+        
+        if 'choices' in r_info:
+            info_opinion = r_info['choices'][0]['message']['content']
+        else:
+            info_opinion = f"（前線網絡情報獲取失敗：{r_info.get('error', {}).get('message', str(r_info))}）"
+    except Exception as e:
+        info_opinion = f"（前線網絡情報獲取超時或中斷：{str(e)}）"
 
-    def agent_institution():
-        prompt = f"""{stock_context}\n你是【機構動向官】。請立即聯網報告 {s.get('symbol')} 最近 30 天內華爾街分析師評級變化、目標價調整與大型機構造持倉變化。必須用繁體中文回答，字數 150 字內。"""
-        r = requests.post(
-            or_url,
-            headers=headers,
-            json={
-                "model": "perplexity/llama-3.1-sonar-large-128k-online",
-                "messages": [{"role": "user", "content": prompt}]
-            },
-            timeout=30
-        ).json()
-        if 'choices' not in r:
-            return None, f"機構動向官異常: {r.get('error', {}).get('message', str(r))}"
-        return r['choices'][0]['message']['content'], None
-
-    def agent_fundamental():
-        prompt = f"""{stock_context}\n你是【財報深度官】。請基於上方快照數據，深度解讀其增長率競爭力、RS評級強弱與波動風險是否可控。必須用繁體中文回答，字數 200 字內。給出明確的「財務支撐強/中/弱」結論。"""
-        r = requests.post(
-            or_url,
-            headers=headers,
-            json={
-                "model": "deepseek/deepseek-chat",
-                "messages": [{"role": "user", "content": prompt}]
-            },
-            timeout=30
-        ).json()
-        if 'choices' not in r:
-            return None, f"財報深度官異常: {r.get('error', {}).get('message', str(r))}"
-        return r['choices'][0]['message']['content'], None
-
-    news_opinion = None
-    institution_opinion = None
-    fundamental_opinion = None
-    errors = []
-    
-    with ThreadPoolExecutor(max_workers=3) as executor:
-        futures = {
-            executor.submit(agent_news): 'news',
-            executor.submit(agent_institution): 'institution',
-            executor.submit(agent_fundamental): 'fundamental'
-        }
-        for future in as_completed(futures):
-            agent_name = futures[future]
-            try:
-                result, err = future.result()
-                if err:
-                    errors.append(err)
-                    result = f"（數據獲取失敗：{err}）"
-                if agent_name == 'news':
-                    news_opinion = result
-                elif agent_name == 'institution':
-                    institution_opinion = result
-                elif agent_name == 'fundamental':
-                    fundamental_opinion = result
-            except Exception as e:
-                errors.append(f"{agent_name}: {str(e)}")
-
-    # ⚖️ 釋放硬核靈魂：不再受制於 Google 的條款，恢復黑白分明的實戰判決格式
+    # ⚖️ 靈魂主位：最高中立裁判官（大腦完全釋放，無立場三步法拷問）
     judge_prompt = f"""{stock_context}
-你是華爾街最高【總裁判官】。現在請你全面整合審閱下方三位情報官提供的實時報告，針對用戶的核心提問「{user_query}」，給出黑白分明、毫無水分的最終交易決策。
 
-📰 【新聞情報官報告】:
-{news_opinion or '數據獲取失敗'}
+你是冷靜、絕對中立、毫無立場的頂級量化分析師。你現在收到上方提供的【實時量化數據快照】與下方由前線帶回的【實時情報報告】。
 
-🏦 【機構動向官報告】:
-{institution_opinion or '數據獲取失敗'}
+【實時情報報告（Perplexity 聯網肉搜）】:
+{info_opinion}
 
-📊 【財報深度官報告】:
-{fundamental_opinion or '數據獲取失敗'}
+請嚴格執行以下任務，不偏多也不偏空，完全基於金融邏輯與客觀數據進行橫向交叉推演：
+1. 審查矛盾：交叉比對量化數據與情報報告，找出它們之間是否存在明顯的數據矛盾、邏輯斷層或市場背離（例如：股價高位突破但基本面數據嚴重惡化；或者數據低迷但前線報告顯示大資金正出現巨幅評級拐點與吸籌）。
+2. 診斷原因：若存在明顯背離，請判定此背離的底層核心成因是什麼（分析師評級大幅滯後？技術面帶量誘多假突破？還是基本面正在先行悄悄發生逆轉？）。
+3. 中立結論：排除所有市場同溫層噪音與主觀臆測，純粹基於邏輯與事實，給出你最終的中立推理結論與客觀防禦配置指引。
 
-請嚴格依據以下戰略格式進行排版輸出（字數 300 字內，完全使用繁體中文）：
-**✅ 綜合看多因素**（列出 2-3 點最強的技術與催化劑因素）
-**⚠️ 風險注意要點**（列出 2-3 點最致命的財務或利空風險）
-**📋 最終裁決**（必須給出「強力支撐 / 基本支撐 / 中性觀望 / 建議迴避」四選一結論，並說明理由）
-**🛡️ 風控與倉位建議**（根據系統建議止損 ${s.get('stop_loss', 'N/A')} 與目標 ${s.get('target', 'N/A')}，給出最硬核的資金與防禦倉位配置指引）"""
+⚠️ 格式限制：必須嚴格依據以下 Markdown 標題輸出，排版永不允許亂來：
+**🔍 多空背離審查**：(填入你發現的矛盾與斷層，若無則寫無)
+**⚙️ 核心成因診斷**：(填入你對背離原因的中立金融邏輯推演)
+**📋 最終量化結論**：(填入你基於數據給出的最終客觀結論，並對齊系統止損 ${s.get('stop_loss', 'N/A')} 與目標價 ${s.get('target', 'N/A')} 給出防守位配比說明)"""
 
     try:
-        # 🎯 物理切換回不鎖投資建議、便宜且推理強悍的 deepseek/deepseek-chat
-        r4 = requests.post(
+        r_judge = requests.post(
             or_url,
             headers=headers,
             json={
                 "model": "deepseek/deepseek-chat",
                 "messages": [{"role": "user", "content": judge_prompt}],
-                "temperature": 0.5
+                "temperature": 0.3
             },
             timeout=45
         ).json()
 
-        if 'choices' not in r4:
+        if 'choices' not in r_judge:
             return jsonify({
                 'success': False, 
-                'error': f"總裁判官通道限制: {r4.get('error', {}).get('message', str(r4))}"
+                'error': f"最高裁判官通道限制: {r_judge.get('error', {}).get('message', str(r_judge))}"
             }), 500
             
-        final_verdict = r4['choices'][0]['message']['content']
+        final_verdict = r_judge['choices'][0]['message']['content']
 
+        # 💯 完美向下兼容前端 UI 元件渲染，絕不白屏
         return jsonify({
             'success': True,
             'agents': {
                 'news': {
-                    'label': '📰 新聞情報官',
+                    'label': '📰 實時情報官',
                     'model': 'Perplexity (聯網)',
-                    'content': news_opinion
-                },
-                'institution': {
-                    'label': '🏦 機構動向官',
-                    'model': 'Perplexity (聯網)',
-                    'content': institution_opinion
-                },
-                'fundamental': {
-                    'label': '📊 財報深度官',
-                    'model': 'DeepSeek',
-                    'content': fundamental_opinion
+                    'content': info_opinion
                 },
                 'judge': {
-                    'label': '⚖️ 總裁判官',
+                    'label': '⚖️ 最高中立裁判官',
                     'model': 'DeepSeek 旗艦大腦',
                     'content': final_verdict
                 }
             },
-            'p1_opinion': news_opinion,
-            'p2_opinion': institution_opinion,
-            'p3_opinion': fundamental_opinion,
+            'p1_opinion': info_opinion,
+            'p2_opinion': "（已降維優任，全線整合至情報官一體化輸出）",
+            'p3_opinion': "（已降維優任，杜絕假記憶幻覺，直接對齊真實量化快照）",
             'final_consensus': final_verdict,
-            'errors': errors if errors else None
+            'errors': [info_opinion] if "獲取失敗" in info_opinion else None
         })
     except Exception as e:
-        return jsonify({'success': False, 'error': f'總裁判官故障: {str(e)}'}), 500
+        return jsonify({'success': False, 'error': f'最高裁判官故障: {str(e)}'}), 500
 
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5000))
