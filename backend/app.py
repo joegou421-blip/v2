@@ -253,7 +253,7 @@ def single_stock(ticker):
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 500
 
-# ─── ⚖️ 2-COMPONENT ULTRA-LEAN QUANT SYSTEM (中立極簡量化複盤管線) ───
+# ─── ⚖️ 2-COMPONENT ULTRA-LEAN QUANT SYSTEM (雙拼對齊歸位版) ───
 @app.route('/api/scan/ai_debate', methods=['POST', 'GET'])
 def ai_debate():
     import os
@@ -317,7 +317,6 @@ def ai_debate():
     }
     or_url = "https://openrouter.ai/api/v1/chat/completions"
 
-    # 📊 組件一：真實量化數據快照（拒絕假記憶補洞，無數據即顯示 N/A）
     stock_context = f"""
 【實時量化數據快照（真實數據源）】
 代號: {s.get('symbol')} | 公司: {s.get('company_name')} | 當前股價: ${s.get('price')}
@@ -332,11 +331,20 @@ RS相對強度評級: {s.get('rs_rating') if s.get('rs_rating') is not None else
 【核心提問】: {user_query}
 """
 
-    # 📰 組件二：前線實時情報官（一發子彈，完成客觀新聞、催化劑與華爾街大行評級肉搜）
-    info_opinion = None
+    p1_opinion = "（前線情報獲取失敗）"
+    p2_opinion = "（前線情報獲取失敗）"
+    
+    # 📰 核心突破：一發 Perplexity 抓取雙維度，並強制使用物理分隔符
     try:
         search_prompt = f"""{stock_context}
-任務：你是【實時情報官】。請立即聯網搜索並整合抓取該股最近兩週的重大真實新聞公告、即將到來的財報/法說會等催化劑時間，以及華爾街各大分析師最近30天的最新評級變動與目標價修訂。請剔除情緒水分，僅回報客觀事實。必須用繁體中文回答，字數300字內。"""
+任務：你是【實時情報官】。請立即聯網搜索該股最新情報。
+你必須嚴格將回答分為以下兩部分，並在兩部分之間精準且單獨插入一行分隔符「===SPLIT_HERE===」：
+
+第一部分：該股最近 2 週的重大真實新聞公告與即將到來的財報/法說會等重大催化劑與市場情緒。
+===SPLIT_HERE===
+第二部分：華爾街各大分析師最近 30 天對該股的最新評級變動（升評/降評）與最新目標價調整實況。
+
+請剔除情緒水分，僅回報客觀事實。必須用繁體中文回答，兩部分總字數控制在 300 字內。"""
         
         r_info = requests.post(
             or_url,
@@ -349,40 +357,53 @@ RS相對強度評級: {s.get('rs_rating') if s.get('rs_rating') is not None else
         ).json()
         
         if 'choices' in r_info:
-            info_opinion = r_info['choices'][0]['message']['content']
+            full_content = r_info['choices'][0]['message']['content']
+            if "===SPLIT_HERE===" in full_content:
+                parts = full_content.split("===SPLIT_HERE===")
+                p1_opinion = parts[0].strip()
+                p2_opinion = parts[1].strip()
+            else:
+                p1_opinion = full_content
+                p2_opinion = "（數據已併入第一部分輸出）"
         else:
-            info_opinion = f"（前線網絡情報獲取失敗：{r_info.get('error', {}).get('message', str(r_info))}）"
+            p1_opinion = f"（網絡情報獲取失敗：{r_info.get('error', {}).get('message', str(r_info))}）"
+            p2_opinion = "（未取得機構動向數據）"
     except Exception as e:
-        info_opinion = f"（前線網絡情報獲取超時或中斷：{str(e)}）"
+        p1_opinion = f"（網絡情報獲取超時：{str(e)}）"
+        p2_opinion = "（超時未取得數據）"
 
-    # ⚖️ 靈魂主位：最高中立裁判官（大腦完全釋放，無立場三步法拷問）
+    # ⚖️ 靈魂主位：滿血版 DeepSeek R1 思考大腦，執行無立場三步法拷問
     judge_prompt = f"""{stock_context}
 
-你是冷靜、絕對中立、毫無立場的頂級量化分析師。你現在收到上方提供的【實時量化數據快照】與下方由前線帶回的【實時情報報告】。
+你是冷靜、絕對中立、毫無立場的頂級量化分析師。你現在收到上方提供的【實時量化數據快照】與下方前線帶回的實時情報：
 
-【實時情報報告（Perplexity 聯網肉搜）】:
-{info_opinion}
+📰 【實時新聞與催化劑情報】:
+{p1_opinion}
 
-請嚴格執行以下任務，不偏多也不偏空，完全基於金融邏輯與客觀數據進行橫向交叉推演：
-1. 審查矛盾：交叉比對量化數據與情報報告，找出它們之間是否存在明顯的數據矛盾、邏輯斷層或市場背離（例如：股價高位突破但基本面數據嚴重惡化；或者數據低迷但前線報告顯示大資金正出現巨幅評級拐點與吸籌）。
-2. 診斷原因：若存在明顯背離，請判定此背離的底層核心成因是什麼（分析師評級大幅滯後？技術面帶量誘多假突破？還是基本面正在先行悄悄發生逆轉？）。
-3. 中立結論：排除所有市場同溫層噪音與主觀臆測，純粹基於邏輯與事實，給出你最終的中立推理結論與客觀防禦配置指引。
+🏦 【華爾街機構動向情報】:
+{p2_opinion}
+
+請審閱以上所有客觀資料，不偏多也不偏空，完全基於金融邏輯進行橫向交叉推演，嚴格執行以下任務：
+1. 審查矛盾：交叉比對量化數據與情報報告，找出它們之間是否存在明顯的數據矛盾、邏輯斷層或市場背離（例如：股價創高但基本面營收完全停滯；或者技術面與情緒極度亢奮但財報出現巨幅空值斷層）。
+2. 診斷原因：若存在背離，請判定此背離的底層核心成因是什麼（分析師評級大幅滯後？技術面帶量誘多假突破？還是大資金正在暗中反向佈局？）。
+3. 中立結論：排除所有市場噪音，純粹基於邏輯與事實，給出你最終的中立推理結論與客觀防禦配置指引。
 
 ⚠️ 格式限制：必須嚴格依據以下 Markdown 標題輸出，排版永不允許亂來：
 **🔍 多空背離審查**：(填入你發現的矛盾與斷層，若無則寫無)
 **⚙️ 核心成因診斷**：(填入你對背離原因的中立金融邏輯推演)
-**📋 最終量化結論**：(填入你基於數據給出的最終客觀結論，並對齊系統止損 ${s.get('stop_loss', 'N/A')} 與目標價 ${s.get('target', 'N/A')} 給出防守位配比說明)"""
+**📋 最終量化結論**：(填入你基於數據給出的最終客觀結論，並對齊系統止損 ${s.get('stop_loss', 'N/A')} 與目標價 ${s.get('target', 'N/A')} 給出防守位配置說明)"""
 
     try:
+        # 🎯 物理對齊大佬點名的 DeepSeek R1 最高推理型大腦 (加強超時防護至 60 秒)
         r_judge = requests.post(
             or_url,
             headers=headers,
             json={
-                "model": "deepseek/deepseek-chat",
+                "model": "deepseek/deepseek-r1",
                 "messages": [{"role": "user", "content": judge_prompt}],
                 "temperature": 0.3
             },
-            timeout=45
+            timeout=60
         ).json()
 
         if 'choices' not in r_judge:
@@ -393,26 +414,19 @@ RS相對強度評級: {s.get('rs_rating') if s.get('rs_rating') is not None else
             
         final_verdict = r_judge['choices'][0]['message']['content']
 
-        # 💯 完美向下兼容前端 UI 元件渲染，絕不白屏
+        # 💯 完美向下兼容並餵滿前端 UI 方塊欄位，物理粉碎「空白」與「占位符」
         return jsonify({
             'success': True,
             'agents': {
-                'news': {
-                    'label': '📰 實時情報官',
-                    'model': 'Perplexity (聯網)',
-                    'content': info_opinion
-                },
-                'judge': {
-                    'label': '⚖️ 最高中立裁判官',
-                    'model': 'DeepSeek 旗艦大腦',
-                    'content': final_verdict
-                }
+                'news': {'label': '📰 實時新聞情報官', 'model': 'Perplexity', 'content': p1_opinion},
+                'institution': {'label': '🏦 機構動向情報官', 'model': 'Perplexity', 'content': p2_opinion},
+                'judge': {'label': '⚖️ 最高風控裁決官', 'model': 'DeepSeek R1', 'content': final_verdict}
             },
-            'p1_opinion': info_opinion,
-            'p2_opinion': "（已降維優任，全線整合至情報官一體化輸出）",
-            'p3_opinion': "（已降維優任，杜絕假記憶幻覺，直接對齊真實量化快照）",
+            'p1_opinion': p1_opinion,
+            'p2_opinion': p2_opinion,
+            'p3_opinion': "（數據已直接對齊真實量化快照）",
             'final_consensus': final_verdict,
-            'errors': [info_opinion] if "獲取失敗" in info_opinion else None
+            'errors': None
         })
     except Exception as e:
         return jsonify({'success': False, 'error': f'最高裁判官故障: {str(e)}'}), 500
