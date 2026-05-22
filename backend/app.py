@@ -372,7 +372,7 @@ RSI: {s.get('rsi', 'N/A')} | ATR%: {s.get('atr_pct', 'N/A')}% | 量能倍數: {s
 1. EPS 與營收趨勢是加速還是減速？這個增長率在同板塊中是否有競爭力？
 2. RS評級 {s.get('rs_rating', 'N/A')} 代表這隻股票相對大盤的強弱如何？
 3. Beta {s.get('beta', 'N/A')} 在當前市況下，波動風險是否可控？
-4. 從財務角度，這隻股票的基本面能否支撐技術面的突破持續性？
+4. From財務角度，這隻股票的基本面能否支撐技術面的突破持續性？
 
 必須用繁體中文回答，字數 200 字內。給出明確的「財務支撐強/中/弱」結論。"""
         r = requests.post(or_url, headers=headers, json={
@@ -440,8 +440,9 @@ RSI: {s.get('rsi', 'N/A')} | ATR%: {s.get('atr_pct', 'N/A')}% | 量能倍數: {s
 必須用繁體中文回答，字數 300 字內。"""
 
     try:
+        # 🎯 核心修復點：將原來的 google/gemini-2.0-flash-001 物理修正為正宗付費旗艦版 Claude 3.5 Sonnet
         r4 = requests.post(or_url, headers=headers, json={
-            "model": "google/gemini-2.0-flash-001",
+            "model": "anthropic/claude-3.5-sonnet",
             "messages": [{"role": "user", "content": judge_prompt}]
         }, timeout=45).json()
 
